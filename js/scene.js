@@ -55,12 +55,12 @@ const Scene = {
       this.raycaster.setFromCamera(this.mouse, this.camera);
 
       // 检查GPU方块
-      const gpuMeshes = Datacenter.gpuBlocks.map(b => b.mesh);
+      const gpuMeshes = Datacenter.gpuBlocks.flatMap(b => b.blades);
       const intersects = this.raycaster.intersectObjects(gpuMeshes, false);
 
       if (intersects.length > 0) {
         const obj = intersects[0].object;
-        const block = Datacenter.gpuBlocks.find(b => b.mesh === obj);
+        const block = Datacenter.gpuBlocks.find(b => b.blades.includes(obj));
         if (block) {
           this.showTooltip(e.clientX, e.clientY, block);
           return;
@@ -97,14 +97,14 @@ const Scene = {
 
       this.raycaster.setFromCamera(this.mouse, this.camera);
 
-      const gpuMeshes = Datacenter.gpuBlocks.map(b => b.mesh);
+      const gpuMeshes = Datacenter.gpuBlocks.flatMap(b => b.blades);
       const intersects = this.raycaster.intersectObjects(gpuMeshes, false);
 
       if (intersects.length > 0) {
         canvas.style.cursor = 'pointer';
         if (this.hoveredObject !== intersects[0].object) {
           if (this.hoveredObject) {
-            this.hoveredObject.material.emissiveIntensity = this.hoveredObject.userData.baseEmissive || 0.15;
+            this.hoveredObject.material.emissiveIntensity = this.hoveredObject.userData.baseEmissive || 0.08;
           }
           this.hoveredObject = intersects[0].object;
           this.hoveredObject.userData.baseEmissive = this.hoveredObject.material.emissiveIntensity;
@@ -113,7 +113,7 @@ const Scene = {
       } else {
         canvas.style.cursor = 'grab';
         if (this.hoveredObject) {
-          this.hoveredObject.material.emissiveIntensity = this.hoveredObject.userData.baseEmissive || 0.15;
+          this.hoveredObject.material.emissiveIntensity = this.hoveredObject.userData.baseEmissive || 0.08;
           this.hoveredObject = null;
         }
       }

@@ -6,9 +6,10 @@ const Datacenter = {
   pipeLines: [],
   powerRoomGroup: null,
   coolingGroup: null,
+  buildingGroup: null,
 
-  RACK_SIZE: 0.3,
-  RACK_HEIGHT: 0.45,
+  RACK_SIZE: 0.35,
+  RACK_HEIGHT: 0.55,
   RACK_GAP: 0.12,
   ROWS: 10,
   COLS: 20,
@@ -69,6 +70,99 @@ const Datacenter = {
     this.gridHelper = new THREE.GridHelper(Math.max(w, d), Math.max(this.COLS, this.ROWS), 0x2a2a3a, 0x1a1a2e);
     this.gridHelper.position.y = 0.13;
     Scene.scene.add(this.gridHelper);
+
+    // 半透明机房
+    this.createBuilding();
+  },
+
+  createBuilding() {
+    // 移除旧建筑
+    if (this.buildingGroup) {
+      Scene.scene.remove(this.buildingGroup);
+      this.buildingGroup.traverse(c => {
+        if (c.geometry && c.geometry !== this.buildingGroup.children[0]?.geometry) c.geometry.dispose();
+        if (c.material) c.material.dispose();
+      });
+    }
+
+    const { w, d } = this.getPlatformSize();
+    const buildingH = 0.8;
+    const group = new THREE.Group();
+
+    // 玻璃材质
+    const glassMat = new THREE.MeshPhysicalMaterial({
+      color: 0x8899bb,
+      roughness: 0.05,
+      metalness: 0.05,
+      transparent: true,
+      opacity: 0.18,
+      depthWrite: false
+    });
+
+    // 结构框架材质
+    const structMat = new THREE.MeshStandardMaterial({ color: 0x556677, roughness: 0.3, metalness: 0.8 });
+
+    // 四面玻璃墙
+    const wallThickness = 0.015;
+    const walls = [
+      { x: 0, z: -d/2, w: w, d: wallThickness },           // 前
+      { x: 0, z: d/2, w: w, d: wallThickness },            // 后
+      { x: -w/2, z: 0, w: wallThickness, d: d },           // 左
+      { x: w/2, z: 0, w: wallThickness, d: d }             // 右
+    ];
+    for (const wall of walls) {
+      const wallGeo = new THREE.BoxGeometry(wall.w, buildingH, wall.d);
+      const wallMesh = new THREE.Mesh(wallGeo, glassMat);
+      wallMesh.position.set(wall.x, buildingH/2 + 0.12, wall.z);
+      wallMesh.receiveShadow = true;
+      group.add(wallMesh);
+    }
+
+    // 屋顶
+    const roofGeo = new THREE.BoxGeometry(w, 0.02, d);
+    const roof = new THREE.Mesh(roofGeo, glassMat);
+    roof.position.y = buildingH + 0.12;
+    roof.receiveShadow = true;
+    group.add(roof);
+
+    // 屋顶横梁
+    const beamGeo = new THREE.BoxGeometry(w + 0.04, 0.025, 0.04);
+    for (let zz = -1; zz <= 1; zz += 2) {
+      const beam = new THREE.Mesh(beamGeo, structMat);
+      beam.position.set(0, buildingH + 0.13, zz * d/2);
+      beam.castShadow = true;
+      group.add(beam);
+    }
+    const beamGeoZ = new THREE.BoxGeometry(0.04, 0.025, d + 0.04);
+    for (let xx = -1; xx <= 1; xx += 2) {
+      const beam = new THREE.Mesh(beamGeoZ, structMat);
+      beam.position.set(xx * w/2, buildingH + 0.13, 0);
+      beam.castShadow = true;
+      group.add(beam);
+    }
+
+    // 四角支柱
+    const pillarGeo = new THREE.CylinderGeometry(0.025, 0.025, buildingH + 0.12, 8);
+    const pillars = [
+      [-w/2, 0, -d/2], [w/2, 0, -d/2],
+      [-w/2, 0, d/2], [w/2, 0, d/2]
+    ];
+    for (const [px, py, pz] of pillars) {
+      const pillar = new THREE.Mesh(pillarGeo, structMat);
+      pillar.position.set(px, (buildingH + 0.12)/2, pz);
+      pillar.castShadow = true;
+      group.add(pillar);
+    }
+
+    // 前门框
+    const doorFrameGeo = new THREE.BoxGeometry(w * 0.15, buildingH * 0.6, 0.03);
+    const doorFrame = new THREE.Mesh(doorFrameGeo, structMat);
+    doorFrame.position.set(0, buildingH * 0.35 + 0.12, -d/2);
+    group.add(doorFrame);
+
+    group.position.y = 0;
+    Scene.scene.add(group);
+    this.buildingGroup = group;
   },
 
   updatePlatform() {
@@ -391,51 +485,128 @@ const Datacenter = {
 
         // 机架组
         const rackGroup = new THREE.Group();
+        const s = this.RACK_SIZE;
+        const h = this.RACK_HEIGHT;
 
-        // 机架底座
-        const baseGeo = new THREE.BoxGeometry(this.RACK_SIZE * 0.9, 0.05, this.RACK_SIZE * 0.9);
-        const baseMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.5, metalness: 0.7 });
-        const base = new THREE.Mesh(baseGeo, baseMat);
-        base.position.y = 0.025;
+        // 材料
+        const frameMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.3, metalness: 0.9 });
+        const panelMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.5, metalness: 0.7 });
+        const gpuBladeMat = new THREE.MeshStandardMaterial({
+          color: color,
+          roughness: 0.25,
+          metalness: 0.6,
+          emissive: color,
+          emissiveIntensity: 0.08
+        });
+
+        // 底座
+        const baseGeo = new THREE.BoxGeometry(s * 0.95, 0.03, s * 0.95);
+        const base = new THREE.Mesh(baseGeo, frameMat);
+        base.position.y = 0.015;
         base.castShadow = true;
         base.receiveShadow = true;
         rackGroup.add(base);
 
-        // GPU 主体 - 带发光效果
-        const gpuGeo = new THREE.BoxGeometry(this.RACK_SIZE * 0.7, this.RACK_HEIGHT * 0.8, this.RACK_SIZE * 0.7);
-        const gpuMat = new THREE.MeshStandardMaterial({
-          color: color,
-          roughness: 0.3,
-          metalness: 0.6,
-          emissive: color,
-          emissiveIntensity: 0.12
-        });
-        const gpuMesh = new THREE.Mesh(gpuGeo, gpuMat);
-        gpuMesh.position.y = this.RACK_HEIGHT * 0.45;
-        gpuMesh.castShadow = true;
-        gpuMesh.receiveShadow = true;
-        rackGroup.add(gpuMesh);
+        // 四角立柱
+        const postRadius = 0.012;
+        const postGeo = new THREE.CylinderGeometry(postRadius, postRadius, h, 8);
+        const corners = [
+          [-s/2 + postRadius, 0, -s/2 + postRadius],
+          [s/2 - postRadius, 0, -s/2 + postRadius],
+          [-s/2 + postRadius, 0, s/2 - postRadius],
+          [s/2 - postRadius, 0, s/2 - postRadius]
+        ];
+        for (const [cx, cy, cz] of corners) {
+          const post = new THREE.Mesh(postGeo, frameMat);
+          post.position.set(cx, h/2, cz);
+          post.castShadow = true;
+          rackGroup.add(post);
+        }
 
-        // 机架顶框
-        const topGeo = new THREE.BoxGeometry(this.RACK_SIZE * 0.9, 0.04, this.RACK_SIZE * 0.9);
-        const topMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.4, metalness: 0.8 });
-        const topFrame = new THREE.Mesh(topGeo, topMat);
-        topFrame.position.y = this.RACK_HEIGHT * 0.85;
-        topFrame.castShadow = true;
-        rackGroup.add(topFrame);
+        // 侧面板（左右）
+        const sideGeo = new THREE.BoxGeometry(0.02, h * 0.85, s * 0.85);
+        const sideL = new THREE.Mesh(sideGeo, panelMat);
+        sideL.position.set(-s/2 + 0.01, h * 0.48, 0);
+        sideL.receiveShadow = true;
+        rackGroup.add(sideL);
+        const sideR = new THREE.Mesh(sideGeo, panelMat);
+        sideR.position.set(s/2 - 0.01, h * 0.48, 0);
+        sideR.receiveShadow = true;
+        rackGroup.add(sideR);
 
-        // 小指示灯
-        const ledGeo = new THREE.SphereGeometry(0.02, 4, 4);
-        const ledMat = new THREE.MeshStandardMaterial({ color: 0x00ff88, emissive: 0x00ff88, emissiveIntensity: 0.8 });
-        const led = new THREE.Mesh(ledGeo, ledMat);
-        led.position.set(this.RACK_SIZE * 0.25, this.RACK_HEIGHT * 0.9, this.RACK_SIZE * 0.3);
-        rackGroup.add(led);
+        // 后面板
+        const backGeo = new THREE.BoxGeometry(s * 0.85, h * 0.85, 0.02);
+        const back = new THREE.Mesh(backGeo, panelMat);
+        back.position.set(0, h * 0.48, -s/2 + 0.01);
+        back.receiveShadow = true;
+        rackGroup.add(back);
+
+        // GPU 刀片单元（4层）
+        const bladeCount = 4;
+        const bladeH = h * 0.15;
+        const bladeD = s * 0.75;
+        const bladeW = s * 0.78;
+        const bladeGap = (h * 0.85) / bladeCount;
+        const bladeStartY = h * 0.12;
+        const bladeMeshes = [];
+
+        for (let i = 0; i < bladeCount; i++) {
+          const by = bladeStartY + i * bladeGap;
+
+          // 刀片主体
+          const bladeGeo = new THREE.BoxGeometry(bladeW, bladeH, bladeD);
+          const blade = new THREE.Mesh(bladeGeo, gpuBladeMat);
+          blade.position.set(0, by, 0);
+          blade.castShadow = true;
+          blade.receiveShadow = true;
+          rackGroup.add(blade);
+          bladeMeshes.push(blade);
+
+          // 前面板通风槽
+          for (let v = 0; v < 3; v++) {
+            const ventGeo = new THREE.BoxGeometry(bladeW * 0.7, 0.006, 0.01);
+            const ventMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 1.0, metalness: 0.1 });
+            const vent = new THREE.Mesh(ventGeo, ventMat);
+            vent.position.set(0, by + (v - 1) * bladeH * 0.22, s/2 - 0.005);
+            rackGroup.add(vent);
+          }
+
+          // 指示灯
+          const ledGeo = new THREE.SphereGeometry(0.015, 4, 4);
+          const ledMat = new THREE.MeshStandardMaterial({ color: 0x00ff88, emissive: 0x00ff88, emissiveIntensity: 0.8 });
+          const led = new THREE.Mesh(ledGeo, ledMat);
+          led.position.set(bladeW * 0.35, by, s/2 + 0.01);
+          rackGroup.add(led);
+        }
+
+        // 顶部横梁
+        const topBeamGeo = new THREE.BoxGeometry(s * 0.9, 0.025, 0.04);
+        for (let zz = -1; zz <= 1; zz += 2) {
+          const beam = new THREE.Mesh(topBeamGeo, frameMat);
+          beam.position.set(0, h - 0.015, zz * s * 0.35);
+          beam.castShadow = true;
+          rackGroup.add(beam);
+        }
+        const topBeamZ = new THREE.BoxGeometry(0.04, 0.025, s * 0.9);
+        for (let xx = -1; xx <= 1; xx += 2) {
+          const beam = new THREE.Mesh(topBeamZ, frameMat);
+          beam.position.set(xx * s * 0.35, h - 0.015, 0);
+          beam.castShadow = true;
+          rackGroup.add(beam);
+        }
+
+        // 顶部面板
+        const topGeo = new THREE.BoxGeometry(s * 0.9, 0.02, s * 0.9);
+        const topPanel = new THREE.Mesh(topGeo, panelMat);
+        topPanel.position.y = h - 0.01;
+        topPanel.castShadow = true;
+        rackGroup.add(topPanel);
 
         rackGroup.position.set(x, 0, z);
         Scene.scene.add(rackGroup);
 
         this.gpuBlocks.push({
-          mesh: gpuMesh,
+          blades: bladeMeshes,
           group: rackGroup,
           type: gpuType,
           row,
@@ -472,7 +643,9 @@ const Datacenter = {
     for (const block of this.gpuBlocks) {
       if (!block.training && marked < count) {
         block.training = true;
-        block.mesh.material.emissiveIntensity = 0.6;
+        for (const blade of block.blades) {
+          blade.material.emissiveIntensity = 0.5;
+        }
         marked++;
       }
     }
@@ -481,7 +654,9 @@ const Datacenter = {
   unmarkTrainingGPUs() {
     for (const block of this.gpuBlocks) {
       block.training = false;
-      block.mesh.material.emissiveIntensity = 0.12;
+      for (const blade of block.blades) {
+        blade.material.emissiveIntensity = 0.08;
+      }
     }
   },
 
@@ -489,8 +664,10 @@ const Datacenter = {
     const t = performance.now() * 0.001;
     for (const block of this.gpuBlocks) {
       if (block.training) {
-        const pulse = 0.3 + 0.3 * Math.sin(t * 3 + block.row * 0.5 + block.col * 0.3);
-        block.mesh.material.emissiveIntensity = pulse;
+        const pulse = 0.25 + 0.25 * Math.sin(t * 3 + block.row * 0.5 + block.col * 0.3);
+        for (const blade of block.blades) {
+          blade.material.emissiveIntensity = pulse;
+        }
       }
     }
   },
