@@ -1,0 +1,216 @@
+// Model Rush - 游戏状态管理与时间循环
+const Game = {
+  state: {
+    companyName: '', // 公司名称
+    cash: CONFIG.INITIAL_CASH,
+    valuation: CONFIG.INITIAL_CASH,
+    day: 1,
+    speed: 1, // 0=pause, 1=1x, 2=2x, 5=5x
+    running: false,
+    elapsed: 0, // 当前游戏天内累计真实秒数
+    lastFrame: 0,
+
+    // GPU 库存: { A100: 0, H100: 0, ... }
+    gpuInventory: {},
+    gpuTotal: 0,
+
+    // 供电
+    powerCapacityMW: CONFIG.INITIAL_POWER_CAPACITY_MW,
+    coolingCapacityMW: CONFIG.INITIAL_COOLING_CAPACITY_MW,
+
+    // 训练
+    activeTraining: null, // 当前训练任务
+    deployedModels: [], // 已部署模型 [{name, score, rank, openSource, scale, ...}]
+    completedModels: [], // 已完成的模型列表
+
+    // 经济
+    dailyIncome: 0,
+    dailyExpense: 0,
+    lastMonthlyDay: 1,
+    lastFundraiseDay: -CONFIG.FUNDRAISE_COOLDOWN_DAYS,
+
+    // 事件
+    nextEventDay: 0,
+    nextCompetitorDay: 0,
+    activeEffects: [], // [{name, effect, daysLeft}]
+    blackoutDays: 0,
+    buyBanDays: 0,
+
+    // 日志
+    eventLog: [],
+
+    // 融资
+    canFundraise: true,
+
+    // 研究员
+    researchers: { junior: 0, senior: 0, principal: 0 },
+
+    // 数据中心
+    datacenterExpands: 0 // 已扩容次数
+  },
+
+  init() {
+    // 初始化 GPU 库存
+    for (const key of Object.keys(CONFIG.GPUS)) {
+      this.state.gpuInventory[key] = 0;
+    }
+    this.state.nextEventDay = this.state.day + CONFIG.EVENT_MIN_DAYS + Math.floor(Math.random() * (CONFIG.EVENT_MAX_DAYS - CONFIG.EVENT_MIN_DAYS));
+    this.state.nextCompetitorDay = this.state.day + CONFIG.COMPETITOR_MIN_DAYS + Math.floor(Math.random() * (CONFIG.COMPETITOR_MAX_DAYS - CONFIG.COMPETITOR_MIN_DAYS));
+    this.state.lastFrame = performance.now();
+    this.state.running = true;
+    this.loop(performance.now());
+  },
+
+  loop(timestamp) {
+    if (!this.state.running) return;
+    requestAnimationFrame((t) => this.loop(t));
+
+    const dt = (timestamp - this.state.lastFrame) / 1000; // 真实秒
+    this.state.lastFrame = timestamp;
+
+    if (this.state.speed === 0) {
+      Scene.render();
+      return;
+    }
+
+    const gameDt = dt * this.state.speed;
+    this.state.elapsed += gameDt;
+
+    // 每天结算
+    let dayAdvanced = false;
+    while (this.state.elapsed >= 1.0) {
+      this.state.elapsed -= 1.0;
+      this.state.day++;
+      dayAdvanced = true;
+      this.advanceDay();
+    }
+
+    if (dayAdvanced) {
+      UI.update();
+      Datacenter.updateGPUVIsuals();
+    }
+
+    // 训练进度更新
+    Training.update(dt * this.state.speed);
+
+    Scene.render();
+  },
+
+  advanceDay() {
+    // 经济结算
+    Economy.settleDaily();
+
+    // 训练进度
+    if (this.state.activeTraining) {
+      Training.advanceTrainingDay();
+    }
+
+    // 断电检查
+    if (this.state.blackoutDays > 0) {
+      this.state.blackoutDays--;
+      if (this.state.blackoutDays === 0) {
+        this.addLog('电网恢复，供电正常');
+      }
+    }
+
+    // 禁运检查
+    if (this.state.buyBanDays > 0) {
+      this.state.buyBanDays--;
+    }
+
+    // 每月结算
+    if (this.state.day - this.state.lastMonthlyDay >= 30) {
+      this.state.lastMonthlyDay = this.state.day;
+      Economy.settleMonthly();
+    }
+
+    // 融资冷却
+    const daysSinceFundraise = this.state.day - this.state.lastFundraiseDay;
+    this.state.canFundraise = daysSinceFundraise >= CONFIG.FUNDRAISE_COOLDOWN_DAYS;
+
+    // 效果衰减
+    this.state.activeEffects = this.state.activeEffects.filter(e => {
+      e.daysLeft--;
+      return e.daysLeft > 0;
+    });
+
+    // 随机事件
+    if (this.state.day >= this.state.nextEventDay) {
+      Events.trigger();
+      this.state.nextEventDay = this.state.day + CONFIG.EVENT_MIN_DAYS + Math.floor(Math.random() * (CONFIG.EVENT_MAX_DAYS - CONFIG.EVENT_MIN_DAYS));
+    }
+
+    // 竞争对手
+    if (this.state.day >= this.state.nextCompetitorDay) {
+      Competitor.release();
+      this.state.nextCompetitorDay = this.state.day + CONFIG.COMPETITOR_MIN_DAYS + Math.floor(Math.random() * (CONFIG.COMPETITOR_MAX_DAYS - CONFIG.COMPETITOR_MIN_DAYS));
+    }
+  },
+
+  setSpeed(speed) {
+    this.state.speed = speed;
+    document.querySelectorAll('.speed-btn').forEach(b => {
+      b.classList.remove('bg-accent/10', 'text-accent', 'border-accent');
+      b.classList.add('border-border');
+    });
+    const btn = document.getElementById('btn-' + speed + 'x');
+    if (btn) {
+      btn.classList.add('bg-accent/10', 'text-accent', 'border-accent');
+      btn.classList.remove('border-border');
+    }
+    if (speed === 0) {
+      document.getElementById('btn-pause').classList.add('bg-accent/10', 'text-accent', 'border-accent');
+    }
+  },
+
+  getGPUPowerMW() {
+    let total = 0;
+    for (const [key, count] of Object.entries(this.state.gpuInventory)) {
+      total += count * CONFIG.GPUS[key].power / 1_000_000;
+    }
+    return total;
+  },
+
+  getTotalPowerMW() {
+    return this.getGPUPowerMW() * (1 + CONFIG.COOLING_RATIO);
+  },
+
+  getTotalTFLOPS() {
+    let total = 0;
+    for (const [key, count] of Object.entries(this.state.gpuInventory)) {
+      total += count * CONFIG.GPUS[key].tflops;
+    }
+    return total;
+  },
+
+  addLog(msg) {
+    this.state.eventLog.unshift({ day: this.state.day, msg });
+    if (this.state.eventLog.length > 50) this.state.eventLog.pop();
+  },
+
+  getActiveEffects() {
+    return this.state.activeEffects;
+  },
+
+  getEffMultiplier() {
+    let mult = 1.0;
+    for (const eff of this.state.activeEffects) {
+      if (eff.effect === 'eff_penalty') mult *= (1 - eff.value);
+      if (eff.effect === 'next_train_boost') mult *= (1 + eff.value);
+    }
+    // 研究员加成（按等级）
+    const r = this.state.researchers;
+    mult *= (1 + r.junior * CONFIG.RESEARCHER_TIERS.junior.effBonus);
+    mult *= (1 + r.senior * CONFIG.RESEARCHER_TIERS.senior.effBonus);
+    mult *= (1 + r.principal * CONFIG.RESEARCHER_TIERS.principal.effBonus);
+    return mult;
+  },
+
+  getIncomeMultiplier() {
+    let mult = 1.0;
+    for (const eff of this.state.activeEffects) {
+      if (eff.effect === 'income_penalty') mult *= (1 - eff.value);
+    }
+    return mult;
+  }
+};

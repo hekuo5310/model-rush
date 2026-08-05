@@ -1,0 +1,191 @@
+/* Model Rush - 自定义样式 */
+/* 配色: 深色主题, 绿色/琥珀色, 禁止蓝紫渐变 */
+
+* { box-sizing: border-box; }
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: #0a0a0f; }
+::-webkit-scrollbar-thumb { background: #2a2a3a; border-radius: 2px; }
+
+/* 面板标签栏 */
+.panel-tab {
+  flex: 1;
+  padding: 8px 4px;
+  text-align: center;
+  font-size: 12px;
+  color: #7f8c8d;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.panel-tab:hover { color: #ccc; }
+.panel-tab.active {
+  color: #00ff88;
+  border-bottom-color: #00ff88;
+}
+
+/* 标签内容面板 */
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* 拖拽手柄 */
+#panel-resize-handle {
+  cursor: col-resize;
+  user-select: none;
+}
+#panel-resize-handle:hover, #panel-resize-handle.dragging {
+  background: #00ff88 !important;
+}
+
+/* 面板卡片 */
+.panel-card {
+  background: #111118;
+  border: 1px solid #2a2a3a;
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+/* 进度条 */
+.progress-bar {
+  width: 100%;
+  height: 6px;
+  background: #1a1a2e;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: #00ff88;
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+
+/* 操作按钮 */
+.action-btn {
+  padding: 6px 14px;
+  border: 1px solid #2a2a3a;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #ccc;
+  background: #111118;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.action-btn:hover {
+  border-color: #00ff88;
+  color: #00ff88;
+  background: rgba(0,255,136,0.05);
+}
+.action-btn.danger-btn {
+  border-color: #e74c3c;
+  color: #e74c3c;
+}
+.action-btn.danger-btn:hover {
+  background: rgba(231,76,60,0.1);
+}
+
+/* 速度按钮 */
+.speed-btn {
+  transition: all 0.15s;
+}
+
+/* 模态框 */
+#modal-overlay { transition: opacity 0.2s; }
+#modal-overlay:not(.hidden) { display: flex !important; }
+
+/* 模态框内按钮 */
+.modal-btn {
+  padding: 8px 16px;
+  border: 1px solid #2a2a3a;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.modal-btn:hover { border-color: #00ff88; }
+.modal-btn.primary {
+  background: #00ff88;
+  color: #0a0a0f;
+  border-color: #00ff88;
+  font-weight: bold;
+}
+.modal-btn.primary:hover {
+  background: #00cc66;
+  border-color: #00cc66;
+}
+.modal-btn.danger {
+  border-color: #e74c3c;
+  color: #e74c3c;
+}
+.modal-btn.danger:hover {
+  background: rgba(231,76,60,0.1);
+}
+
+/* 输入框 */
+.modal-input {
+  width: 100%;
+  padding: 8px 10px;
+  background: #0a0a0f;
+  border: 1px solid #2a2a3a;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 13px;
+  outline: none;
+}
+.modal-input:focus { border-color: #00ff88; }
+.modal-input::placeholder { color: #555; }
+
+/* Toast 动画 */
+#toast { animation: slideIn 0.3s ease; }
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* 技术卡片 */
+.tech-card {
+  border: 1px solid #2a2a3a;
+  border-radius: 6px;
+  padding: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.tech-card:hover { border-color: #555; }
+.tech-card.selected {
+  border-color: #00ff88;
+  background: rgba(0,255,136,0.05);
+}
+.tech-card.locked {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.tech-card.locked:hover { border-color: #2a2a3a; }
+
+/* 标签 */
+.tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; }
+.tag-green { background: rgba(0,255,136,0.15); color: #00ff88; }
+.tag-red { background: rgba(231,76,60,0.15); color: #e74c3c; }
+.tag-amber { background: rgba(255,170,0,0.15); color: #ffaa00; }
+.tag-silver { background: rgba(127,140,141,0.15); color: #7f8c8d; }
+
+/* 排名高亮 */
+.rank-1 { color: #ffaa00; }
+.rank-2 { color: #ccc; }
+.rank-3 { color: #cd7f32; }
+
+/* 锁定覆盖 */
+.locked-overlay { position: relative; }
+.locked-overlay::after {
+  content: 'LOCKED';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10,10,15,0.7);
+  color: #555;
+  font-size: 11px;
+  letter-spacing: 2px;
+  border-radius: 6px;
+}
