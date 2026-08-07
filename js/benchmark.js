@@ -1,71 +1,97 @@
 // Model Rush - Benchmark 评分系统
 const Benchmark = {
-  evaluate(training) {
-    const scale = CONFIG.MODEL_SCALES[training.scale];
-    const dataQuality = CONFIG.DATA_QUALITY[training.dataQuality];
-
-    // 基础分: 基于参数量 (对数缩放，上限52)
-    const logParams = Math.log10(scale.params);
-    let baseScore = 22 + Math.max(0, (logParams - 9)) * 10; // 1B(22) -> 70B(40) -> 400B(48) -> 1T(52)
-    baseScore = Math.max(15, Math.min(52, baseScore));
-
-    // 质量加成（加法叠加，上限1.5）
-    let qualitySum = 1.0 + dataQuality.scoreMod;
-
-    for (const techKey of training.selectedTechs) {
-      const tech = CONFIG.TECHNIQUES[techKey];
-      if (tech && tech.qualityMod) {
-        qualitySum += tech.qualityMod;
-      }
-    }
-
-    if (training.alignmentMethod === 'rlhf') {
-      qualitySum += 0.05;
-    } else if (training.alignmentMethod === 'dpo') {
-      qualitySum += 0.02;
-    }
-
-    qualitySum = Math.min(qualitySum, 1.5);
-
-    let score = baseScore * qualitySum;
-
-    // 中断惩罚（-5%每次）
-    score *= (1 - training.interruptions * 0.05);
-
-    // 随机波动 +/-5%
-    score *= (0.95 + Math.random() * 0.10);
-
-    return Math.max(0, Math.min(100, score));
+  // 技术对特定基准类别的影响（小幅加成，不让分数膨胀）
+  CATEGORY_TECH_BONUSES: {
+    moe:             { reasoning: 0.05, coding: 0.05 },
+    distillation:    { comprehension: 0.05 },
+    constitutional:  { safety: 0.10 },
+    gqa:             { long_context: 0.05 },
+    mtp:             { reasoning: 0.03, multilingual: 0.03 },
+    qat:             { reasoning: 0.03, coding: 0.03, comprehension: 0.03, multilingual: 0.03, safety: 0.03, long_context: 0.03 },
+    sparse_attention:{ comprehension: -0.03 },
+    swiglu:          { reasoning: 0.02, coding: 0.02, comprehension: 0.02 },
+    grpo:            { reasoning: 0.05, coding: 0.03 },
+    kv_cache:        { long_context: 0.03 },
+    rope:            { long_context: 0.04, multilingual: 0.02 },
+    ring_attention:  { long_context: 0.05 },
+    rlaif:           { safety: 0.04 },
+    data_dedup:      { comprehension: 0.02, multilingual: 0.02 }
   },
 
-  updateRankings() {
-    const s = Game.state;
+  evaluate(training) {
+    // 兼容旧存档：如果没有 params，从 scale 查找
+    const params = training.params || (CONFIG.MODEL_SCALES[training.scale] ? CONFIG.MODEL_SCALES[training.scale].params : 70e9);
+    const logParams = Math.log10(params);
 
-    // 收集所有模型（玩家 + 竞争对手）
-    let allModels = [];
-    for (const model of s.deployedModels) {
-      allModels.push({ ...model, isPlayer: true });
+    // 通用质量加成（来自数据采集质量、技术和对齐方法，上限1.30）
+    let generalQuality = 1.0 + (training.dataQualityScoreMod || 0);
+    for (const techKey of (training.selectedTechs || [])) {
+      const tech = CONFIG.TECH_RESEARCH[techKey];
+      if (tech && tech.qualityMod) {
+        generalQuality += tech.qualityMod;
+      }
+    }
+    if (training.alignmentMethod === 'rlhf') {
+      generalQuality += CONFIG.ALIGNMENT_METHODS.rlhf.qualityBonus;
+    } else if (training.alignmentMethod === 'dpo') {
+      generalQuality += CONFIG.ALIGNMENT_METHODS.dpo.qualityBonus;
+    }
+    generalQuality = Math.min(generalQuality, 1.30);
+
+    const breakdown = {};
+    const benchmarks = CONFIG.BENCHMARKS;
+
+    // 数据类别分布影响对应基准类别（来源多样化的奖励）
+    let dataDist = {};
+    try {
+      dataDist = DataCollection.getCategoryDistribution();
+    } catch (e) { /* 极端情况：无数据时不应用分布加成 */ }
+    const dataTotal = Object.values(dataDist).reduce((a, b) => a + b, 0);
+    const uniformShare = 1 / Object.keys(benchmarks).length; // 均匀分布基准值
+
+    for (const [key, bm] of Object.entries(benchmarks)) {
+      // 基础分（每个类别）：模型越大基础分越高，但增长放缓
+      let catScore = 20 + Math.max(0, logParams - 9) * 7;
+
+      // 应用通用质量加成
+      catScore *= generalQuality;
+
+      // 数据类别分布加成：某类数据占比越高，对应类别得分越高（钳制±10%）
+      if (dataTotal > 0) {
+        const share = (dataDist[key] || 0) / dataTotal;
+        const bonusFactor = 1 + (share - uniformShare) * 0.6;
+        catScore *= Math.max(0.9, Math.min(1.10, bonusFactor));
+      }
+
+      // 应用特定类别技术加成
+      let catTechBonus = 1.0;
+      for (const techKey of (training.selectedTechs || [])) {
+        const bonusMap = this.CATEGORY_TECH_BONUSES[techKey];
+        if (bonusMap && bonusMap[key]) {
+          catTechBonus += bonusMap[key];
+        }
+      }
+      catScore *= catTechBonus;
+
+      // 中断惩罚
+      catScore *= (1 - (training.interruptions || 0) * 0.05);
+
+      // 随机波动（每个类别独立）
+      catScore *= (0.95 + Math.random() * 0.10);
+
+      // 上限
+      catScore = Math.max(0, Math.min(100, catScore));
+
+      breakdown[key] = catScore;
     }
 
-    // 竞争对手模型
-    for (const comp of Competitor.state.models) {
-      allModels.push({ ...comp, isPlayer: false });
+    // 加权总分
+    let overallScore = 0;
+    for (const [key, bm] of Object.entries(benchmarks)) {
+      overallScore += breakdown[key] * bm.weight;
     }
+    overallScore = Math.max(0, Math.min(100, overallScore));
 
-    // 按分数降序排列
-    allModels.sort((a, b) => b.score - a.score);
-
-    // 分配排名
-    for (let i = 0; i < allModels.length; i++) {
-      allModels[i].rank = i + 1;
-    }
-
-    // 更新玩家模型排名
-    for (const model of s.deployedModels) {
-      const found = allModels.find(m => m.name === model.name && m.isPlayer);
-      if (found) model.rank = found.rank;
-    }
-
-    Competitor.state.models = allModels.filter(m => !m.isPlayer);
+    return { overallScore, breakdown };
   }
 };

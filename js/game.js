@@ -5,7 +5,7 @@ const Game = {
     cash: CONFIG.INITIAL_CASH,
     valuation: CONFIG.INITIAL_CASH,
     day: 1,
-    speed: 1, // 0=pause, 1=1x, 2=2x, 5=5x
+    speed: 1, // 0=pause, 1=1x, 2=2x
     running: false,
     elapsed: 0, // 当前游戏天内累计真实秒数
     lastFrame: 0,
@@ -30,8 +30,9 @@ const Game = {
     lastFundraiseDay: -CONFIG.FUNDRAISE_COOLDOWN_DAYS,
 
     // 事件
+
+
     nextEventDay: 0,
-    nextCompetitorDay: 0,
     activeEffects: [], // [{name, effect, daysLeft}]
     blackoutDays: 0,
     buyBanDays: 0,
@@ -44,10 +45,15 @@ const Game = {
 
     // 研究员
     researchers: { junior: 0, senior: 0, principal: 0 },
+    lastHireDay: 0, // 上次聘请研究员的天数，用于冷却
 
     // 数据中心
     datacenterExpands: 0 // 已扩容次数
+
+    // 自动存档计时器由 Game.loop 管理，不存state
   },
+
+  autoSaveTimer: 0, // 自动存档计时器（真实秒）
 
   init() {
     // 初始化 GPU 库存
@@ -55,7 +61,6 @@ const Game = {
       this.state.gpuInventory[key] = 0;
     }
     this.state.nextEventDay = this.state.day + CONFIG.EVENT_MIN_DAYS + Math.floor(Math.random() * (CONFIG.EVENT_MAX_DAYS - CONFIG.EVENT_MIN_DAYS));
-    this.state.nextCompetitorDay = this.state.day + CONFIG.COMPETITOR_MIN_DAYS + Math.floor(Math.random() * (CONFIG.COMPETITOR_MAX_DAYS - CONFIG.COMPETITOR_MIN_DAYS));
     this.state.lastFrame = performance.now();
     this.state.running = true;
     this.loop(performance.now());
@@ -67,6 +72,13 @@ const Game = {
 
     const dt = (timestamp - this.state.lastFrame) / 1000; // 真实秒
     this.state.lastFrame = timestamp;
+
+    // 自动存档（每100真实秒）
+    this.autoSaveTimer += dt;
+    if (this.autoSaveTimer >= 100) {
+      this.autoSaveTimer = 0;
+      SaveSystem.save(true);
+    }
 
     if (this.state.speed === 0) {
       Scene.render();
@@ -105,6 +117,9 @@ const Game = {
       Training.advanceTrainingDay();
     }
 
+    // 研究进度
+    Research.advanceDay();
+
     // 断电检查
     if (this.state.blackoutDays > 0) {
       this.state.blackoutDays--;
@@ -130,6 +145,10 @@ const Game = {
 
     // 效果衰减
     this.state.activeEffects = this.state.activeEffects.filter(e => {
+      if (e.daysLeft === 1 && e.effect === 'power_fault_restore') {
+        this.state.powerCapacityMW = e.value;
+        Game.addLog('供电设施修复，容量恢复');
+      }
       e.daysLeft--;
       return e.daysLeft > 0;
     });
@@ -138,12 +157,6 @@ const Game = {
     if (this.state.day >= this.state.nextEventDay) {
       Events.trigger();
       this.state.nextEventDay = this.state.day + CONFIG.EVENT_MIN_DAYS + Math.floor(Math.random() * (CONFIG.EVENT_MAX_DAYS - CONFIG.EVENT_MIN_DAYS));
-    }
-
-    // 竞争对手
-    if (this.state.day >= this.state.nextCompetitorDay) {
-      Competitor.release();
-      this.state.nextCompetitorDay = this.state.day + CONFIG.COMPETITOR_MIN_DAYS + Math.floor(Math.random() * (CONFIG.COMPETITOR_MAX_DAYS - CONFIG.COMPETITOR_MIN_DAYS));
     }
   },
 
@@ -163,22 +176,97 @@ const Game = {
     }
   },
 
+  // GPU 额定总功耗（所有GPU满载）
   getGPUPowerMW() {
     let total = 0;
     for (const [key, count] of Object.entries(this.state.gpuInventory)) {
-      total += count * CONFIG.GPUS[key].power / 1_000_000;
+      const gpu = CONFIG.GPUS[key];
+      if (!gpu) continue; // 防御：跳过非型号键
+      total += count * gpu.power / 1_000_000;
     }
     return total;
   },
 
+  // 已部署模型占用的推理GPU分配（按型号）
+  getInferenceGPUAllocation() {
+    const alloc = {};
+    for (const model of this.state.deployedModels) {
+      if (model.deployed && model.deploymentGPUs) {
+        for (const [type, count] of Object.entries(model.deploymentGPUs)) {
+          if (!CONFIG.GPUS[type]) continue; // 跳过旧存档 _legacy 占位
+          alloc[type] = (alloc[type] || 0) + count;
+        }
+      }
+    }
+    return alloc;
+  },
+
+  // 已部署模型占用的推理GPU总数
+  getInferenceGPUs() {
+    const alloc = this.getInferenceGPUAllocation();
+    return Object.values(alloc).reduce((a, b) => a + b, 0);
+  },
+
+  // 可用于训练的GPU数（总数 - 推理占用）
+  getAvailableGPUs() {
+    return Math.max(0, this.state.gpuTotal - this.getInferenceGPUs());
+  },
+
+  // GPU 实际功耗（训练中GPU满载，推理GPU中载，闲置GPU低功耗）
+  getGPUActualPowerMW() {
+    let total = 0;
+    const trainingAlloc = this.state.activeTraining ? (this.state.activeTraining.gpuAllocation || {}) : {};
+    const inferenceAlloc = this.getInferenceGPUAllocation();
+    // 兼容旧存档的 _legacy 分配
+    const legacyTraining = trainingAlloc._legacy || 0;
+    const legacyInference = inferenceAlloc._legacy || 0;
+    let legacyTrainRemaining = legacyTraining;
+    let legacyInfRemaining = legacyInference;
+
+    for (const [key, count] of Object.entries(this.state.gpuInventory)) {
+      const ratedMW = CONFIG.GPUS[key].power / 1_000_000;
+      let trainingCount = Math.min(count, trainingAlloc[key] || 0);
+      // 旧存档回退：按顺序分配训练GPU
+      if (legacyTrainRemaining > 0 && trainingCount < count) {
+        const legacyAdd = Math.min(count - trainingCount, legacyTrainRemaining);
+        trainingCount += legacyAdd;
+        legacyTrainRemaining -= legacyAdd;
+      }
+      let remaining = count - trainingCount;
+
+      let inferenceCount = Math.min(remaining, inferenceAlloc[key] || 0);
+      // 旧存档回退：按顺序分配推理GPU
+      if (legacyInfRemaining > 0 && inferenceCount < remaining) {
+        const legacyAdd = Math.min(remaining - inferenceCount, legacyInfRemaining);
+        inferenceCount += legacyAdd;
+        legacyInfRemaining -= legacyAdd;
+      }
+      remaining -= inferenceCount;
+
+      // 训练 ~95%, 推理 ~60%, 闲置 ~15%
+      total += trainingCount * ratedMW * 0.95;
+      total += inferenceCount * ratedMW * CONFIG.INFERENCE_POWER_RATIO;
+      total += remaining * ratedMW * 0.15;
+    }
+    return total;
+  },
+
+  // 实际总功耗（含冷却）
   getTotalPowerMW() {
+    return this.getGPUActualPowerMW() * (1 + CONFIG.COOLING_RATIO);
+  },
+
+  // 额定总功耗（含冷却，用于显示上限）
+  getRatedPowerMW() {
     return this.getGPUPowerMW() * (1 + CONFIG.COOLING_RATIO);
   },
 
   getTotalTFLOPS() {
     let total = 0;
     for (const [key, count] of Object.entries(this.state.gpuInventory)) {
-      total += count * CONFIG.GPUS[key].tflops;
+      const gpu = CONFIG.GPUS[key];
+      if (!gpu) continue; // 防御：跳过非型号键
+      total += count * gpu.tflops;
     }
     return total;
   },

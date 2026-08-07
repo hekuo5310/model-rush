@@ -7,17 +7,24 @@ const Economy = {
 
     // API 收入（已部署模型）
     for (const model of s.deployedModels) {
-      const scaleKey = Object.keys(CONFIG.MODEL_SCALES).find(k => CONFIG.MODEL_SCALES[k].label === model.scale) || 'medium';
+      if (!model.deployed) continue; // 未部署的模型不产生收入
+      const scaleKey = paramsToScaleKey(model.params || 0);
       const pricePerToken = CONFIG.API_PRICE_PER_TOKEN[scaleKey] || 3e-9;
       const dau = CONFIG.DAILY_ACTIVE_USERS[scaleKey] || 500000;
       const openSourceMult = model.openSource ? 0 : 1;
       let incomeBonus = 1.0;
-      // 检查模型是否使用了 Speculative Decoding
       if (model.techs && model.techs.includes('speculative')) {
-        incomeBonus += CONFIG.TECHNIQUES.speculative.incomeBonus;
+        incomeBonus += CONFIG.TECH_RESEARCH.speculative.incomeBonus;
+      }
+      if (model.techs && model.techs.includes('kv_cache')) {
+        incomeBonus += CONFIG.TECH_RESEARCH.kv_cache.incomeBonus;
       }
       const dailyTokens = dau * CONFIG.AVG_DAILY_TOKENS;
-      income += dailyTokens * pricePerToken * openSourceMult * incomeBonus * Game.getIncomeMultiplier();
+      // 收入受部署GPU数量影响（按型号折算为等效H100）
+      const deployTotal = effectiveInferenceGPUs(model.deploymentGPUs);
+      const recInference = recommendedInferenceGPUs(model.params || 0);
+      const deployRatio = recInference > 0 ? Math.min(1, deployTotal / recInference) : 1;
+      income += dailyTokens * pricePerToken * openSourceMult * incomeBonus * Game.getIncomeMultiplier() * deployRatio;
     }
 
     // 企业授权收入（每月结算，这里不做）
@@ -45,6 +52,12 @@ const Economy = {
     // 现金更新
     s.cash += income - expense;
 
+    // 破产检查
+    if (s.cash < -50_000_000) {
+      this.triggerBankruptcy();
+      return;
+    }
+
     // 估值更新
     let gpuAssetValue = 0;
     for (const [key, count] of Object.entries(s.gpuInventory)) {
@@ -62,9 +75,7 @@ const Economy = {
     let enterpriseIncome = 0;
 
     for (const model of s.deployedModels) {
-      const rank = model.rank || 10;
-      const mult = CONFIG.ENTERPRISE_RANK_MULT[rank] || 0.05;
-      enterpriseIncome += CONFIG.ENTERPRISE_BASE * mult * Game.getIncomeMultiplier();
+      enterpriseIncome += CONFIG.ENTERPRISE_BASE * (model.score / 50) * Game.getIncomeMultiplier();
     }
 
     s.cash += enterpriseIncome;
@@ -82,9 +93,8 @@ const Economy = {
     const bestModel = s.deployedModels.length > 0
       ? s.deployedModels.reduce((a, b) => a.score > b.score ? a : b)
       : null;
-    const rank = bestModel ? bestModel.rank : 10;
-    const mult = CONFIG.FUNDRAISE_RANK_MULT[rank] || 0.2;
-    const amount = CONFIG.FUNDRAISE_BASE * mult * (0.8 + Math.random() * 0.4);
+    const score = bestModel ? bestModel.score : 0;
+    const amount = CONFIG.FUNDRAISE_BASE * (score / 100) * CONFIG.FUNDRAISE_SCORE_MULT * (0.8 + Math.random() * 0.4);
 
     s.cash += amount;
     s.lastFundraiseDay = s.day;
@@ -101,10 +111,22 @@ const Economy = {
     return val.toFixed(0);
   },
 
+  triggerBankruptcy() {
+    Game.state.running = false;
+    Game.addLog('公司已破产! 资金链断裂，游戏结束。');
+    UI.showBankruptcyModal();
+  },
+
   buyGPUs(gpuType, racks) {
     const s = Game.state;
     const gpu = CONFIG.GPUS[gpuType];
     if (!gpu) return false;
+
+    // 市值解锁检查
+    if (s.valuation < gpu.unlockValuation) {
+      UI.toast(gpu.name + ' 需要市值 $' + Economy.formatMoney(gpu.unlockValuation) + ' 解锁 (当前 $' + Economy.formatMoney(s.valuation) + ')');
+      return false;
+    }
 
     const gpuCount = racks * 8;
     const cost = gpuCount * gpu.price;
@@ -126,6 +148,20 @@ const Economy = {
       return false;
     }
 
+    // 检查数据中心机架位容量（防止出现"隐形GPU"：库存有但3D无法放置）
+    let canPlace = 0;
+    for (let row = 0; row < Datacenter.ROWS; row++) {
+      for (let col = 0; col < Datacenter.COLS; col++) {
+        if (Datacenter.gpuBlocks.some(b => b.row === row && b.col === col)) continue;
+        if (Datacenter.isPositionBlocked(col, row)) continue;
+        canPlace++;
+      }
+    }
+    if (gpuCount > canPlace) {
+      UI.toast('数据中心空间不足! 剩余 ' + canPlace + ' 个机架位，本次最多购买 ' + canPlace + ' 张GPU');
+      return false;
+    }
+
     s.cash -= cost;
     s.gpuInventory[gpuType] += gpuCount;
     s.gpuTotal += gpuCount;
@@ -138,9 +174,9 @@ const Economy = {
       UI.toast('功耗超载! 断电3天!');
     }
 
-    // 检查冷却（冷却容量需 >= GPU功耗的30%）
-    const gpuPowerMW = Game.getGPUPowerMW();
-    if (gpuPowerMW * CONFIG.COOLING_RATIO > s.coolingCapacityMW) {
+    // 检查冷却（冷却容量需 >= 实际GPU功耗的30%）
+    const gpuActualPowerMW = Game.getGPUActualPowerMW();
+    if (gpuActualPowerMW * CONFIG.COOLING_RATIO > s.coolingCapacityMW) {
       Game.addLog('警告: 冷却不足! 训练效率降低30%');
       s.activeEffects.push({ name: '冷却不足', effect: 'eff_penalty', value: 0.30, daysLeft: 7 });
     }
@@ -185,11 +221,24 @@ const Economy = {
     const s = Game.state;
     const tierConfig = CONFIG.RESEARCHER_TIERS[tier];
     if (!tierConfig) return false;
+    // 市值解锁检查
+    if (s.valuation < tierConfig.unlockValuation) {
+      UI.toast(tierConfig.name + ' 需要市值 $' + Economy.formatMoney(tierConfig.unlockValuation) + ' 解锁');
+      return false;
+    }
     if (s.researchers[tier] >= CONFIG.RESEARCHER_MAX_PER_TIER) {
       UI.toast(tierConfig.name + '已达上限!');
       return false;
     }
+    // 冷却检查
+    const daysSinceLastHire = s.day - s.lastHireDay;
+    if (s.lastHireDay > 0 && daysSinceLastHire < CONFIG.RESEARCHER_HIRE_COOLDOWN) {
+      const remaining = CONFIG.RESEARCHER_HIRE_COOLDOWN - daysSinceLastHire;
+      UI.toast('招聘冷却中，还需 ' + remaining + ' 天');
+      return false;
+    }
     s.researchers[tier]++;
+    s.lastHireDay = s.day;
     Game.addLog('聘请' + tierConfig.name + ' (#' + s.researchers[tier] + '), 月薪 $' + Economy.formatMoney(tierConfig.salary));
     UI.update();
     return true;
@@ -206,9 +255,19 @@ const Economy = {
     if (!gpu) return false;
 
     const current = s.gpuInventory[gpuType] || 0;
-    const toRemove = Math.min(count, current);
+    // 计算被占用的GPU数量（训练 + 推理）
+    const trainingAlloc = s.activeTraining ? (s.activeTraining.gpuAllocation || {}) : {};
+    const inferenceAlloc = Game.getInferenceGPUAllocation();
+    const used = (trainingAlloc[gpuType] || 0) + (inferenceAlloc[gpuType] || 0);
+    const available = Math.max(0, current - used);
+
+    const toRemove = Math.min(count, available);
     if (toRemove <= 0) {
-      UI.toast('没有可拆除的GPU!');
+      if (current > 0) {
+        UI.toast(gpu.name + ' 全部被占用(训练' + (trainingAlloc[gpuType] || 0) + '/推理' + (inferenceAlloc[gpuType] || 0) + ')，需先释放资源');
+      } else {
+        UI.toast('没有可拆除的GPU!');
+      }
       return false;
     }
 
@@ -224,13 +283,9 @@ const Economy = {
 
   expandDatacenter() {
     const s = Game.state;
-    if (s.datacenterExpands >= CONFIG.DATACENTER_MAX_EXPANDS) {
-      UI.toast('数据中心已扩容至最大!');
-      return false;
-    }
-    const cost = CONFIG.DATACENTER_EXPAND_COST * (s.datacenterExpands + 1);
+    const cost = CONFIG.DATACENTER_EXPAND_BASE_COST * Math.pow(CONFIG.DATACENTER_EXPAND_EXPONENT, s.datacenterExpands);
     if (s.cash < cost) {
-      UI.toast('资金不足!');
+      UI.toast('资金不足! 需要 $' + Economy.formatMoney(cost));
       return false;
     }
     s.cash -= cost;

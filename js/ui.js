@@ -4,6 +4,24 @@ const UI = {
     UI.update();
     UI.initPanelTabs();
     UI.initPanelResize();
+    UI.initDropdownClose();
+    UI.initMobilePanel();
+  },
+
+  // 移动端面板切换
+  toggleMobilePanel() {
+    const panel = document.getElementById('right-panel');
+    if (panel) panel.classList.toggle('mobile-open');
+  },
+
+  initMobilePanel() {
+    // 点击面板外关闭（移动端）
+    document.getElementById('scene-container').addEventListener('click', (e) => {
+      if (window.innerWidth <= 768 && e.target.id === 'scene-container') {
+        const panel = document.getElementById('right-panel');
+        if (panel) panel.classList.remove('mobile-open');
+      }
+    });
   },
 
   initPanelTabs() {
@@ -33,8 +51,10 @@ const UI = {
 
       const onMove = (e2) => {
         const dx = e2.clientX - startX;
-        const newWidth = Math.max(240, Math.min(500, startWidth - dx));
+        const newWidth = Math.max(280, Math.min(500, startWidth - dx));
         panel.style.width = newWidth + 'px';
+        // 面板宽度变化会改变场景容器尺寸，同步Three.js渲染器（否则场景区露出暗色背景/错位）
+        if (typeof Scene !== 'undefined' && Scene.onResize) Scene.onResize();
       };
       const onUp = () => {
         handle.classList.remove('dragging');
@@ -48,6 +68,27 @@ const UI = {
     });
   },
 
+  initDropdownClose() {
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.dropdown-group')) {
+        UI.closeDropdown();
+      }
+    });
+  },
+
+  toggleDropdown(btn) {
+    const group = btn.closest('.dropdown-group');
+    const isOpen = group.classList.contains('open');
+    UI.closeDropdown();
+    if (!isOpen) {
+      group.classList.add('open');
+    }
+  },
+
+  closeDropdown() {
+    document.querySelectorAll('.dropdown-group.open').forEach(g => g.classList.remove('open'));
+  },
+
   update() {
     const s = Game.state;
 
@@ -56,6 +97,9 @@ const UI = {
     document.getElementById('valuation').textContent = '$' + Economy.formatMoney(s.valuation);
     document.getElementById('day').textContent = s.day;
     if (s.speed === 0) document.getElementById('day').textContent = s.day + ' (暂停)';
+
+    // 预览概览
+    UI.updateOverview();
 
     // 右侧面板 - 财务
     document.getElementById('panel-income').textContent = '+$' + Economy.formatMoney(s.dailyIncome);
@@ -69,8 +113,11 @@ const UI = {
     // 训练状态
     UI.updateTrainingStatus();
 
+    // 产品列表
+    UI.updateProducts();
+
     // 排行榜
-    UI.updateLeaderboard();
+    UI.updateResearch();
 
     // GPU 库存
     UI.updateGPUInventory();
@@ -79,12 +126,73 @@ const UI = {
     UI.updateEventLog();
 
     // 融资按钮
-    document.getElementById('bottombar').querySelectorAll('button')[7].textContent = s.canFundraise ? '发起融资' : '融资冷却中';
+    document.getElementById('btn-fundraise').textContent = s.canFundraise ? '发起融资' : '融资冷却中';
 
     // 研究员
     const r = s.researchers;
     const totalR = r.junior + r.senior + r.principal;
     document.getElementById('panel-researcher').textContent = totalR + ' (J:' + r.junior + ' S:' + r.senior + ' P:' + r.principal + ')';
+  },
+
+  updateOverview() {
+    const s = Game.state;
+    const el = document.getElementById('overview-summary');
+    if (!el) return;
+
+    let html = '';
+    // 训练状态简报
+    if (s.activeTraining) {
+      const prog = Training.getProgress();
+      if (prog && !prog.collapsed) {
+        html += '<div><span class="text-muted">训练中:</span> <span class="text-accent">' + prog.modelName + '</span> (' + prog.scale + ')</div>';
+        html += '<div><span class="text-muted">进度:</span> <span class="font-mono">' + prog.overallProgress.toFixed(0) + '%</span> | 剩余 <span class="font-mono">' + prog.remainingDays + '</span>天</div>';
+      } else if (prog && prog.collapsed) {
+        html += '<div class="text-danger">训练崩坏: ' + prog.modelName + '</div>';
+      }
+    } else {
+      html += '<div class="text-muted">无训练任务</div>';
+    }
+
+    // 部署模型简报
+    const deployed = s.deployedModels.filter(m => m.deployed);
+    if (deployed.length > 0) {
+      const bestModel = deployed.reduce((a, b) => a.score > b.score ? a : b);
+      html += '<div><span class="text-muted">已部署:</span> ' + deployed.length + ' 个模型 | 最高分 <span class="text-accent font-mono">' + bestModel.score.toFixed(1) + '</span></div>';
+    } else {
+      html += '<div class="text-muted">无已部署模型</div>';
+    }
+
+    // GPU使用简报
+    const inferenceGPUs = Game.getInferenceGPUs();
+    const trainingGPUs = s.activeTraining ? s.activeTraining.gpuAllocated : 0;
+    const idleGPUs = s.gpuTotal - inferenceGPUs - trainingGPUs;
+    html += '<div><span class="text-muted">GPU:</span> <span class="font-mono">' + s.gpuTotal + '</span> 总计';
+    if (s.gpuTotal > 0) {
+      html += ' (<span class="text-amber">' + trainingGPUs + '</span>训练 <span class="text-amber">' + inferenceGPUs + '</span>推理 <span class="text-accent">' + idleGPUs + '</span>空闲)';
+    }
+    html += '</div>';
+
+    // 研发简报
+    const researching = Research.getResearchingList();
+    if (researching.length > 0) {
+      html += '<div><span class="text-muted">研发中:</span> ' + researching.map(r => r.name).join(', ') + '</div>';
+    }
+
+    // 警告
+    const totalPower = Game.getTotalPowerMW();
+    if (totalPower > s.powerCapacityMW) {
+      html += '<div class="text-danger">供电超载! ' + totalPower.toFixed(2) + '/' + s.powerCapacityMW + ' MW</div>';
+    }
+    const actualGPUPower = Game.getGPUActualPowerMW();
+    const coolingLoad = actualGPUPower * CONFIG.COOLING_RATIO;
+    if (coolingLoad > s.coolingCapacityMW) {
+      html += '<div class="text-danger">冷却不足! ' + coolingLoad.toFixed(2) + '/' + s.coolingCapacityMW + ' MW</div>';
+    }
+    if (s.blackoutDays > 0) {
+      html += '<div class="text-danger">断电中: 剩余 ' + s.blackoutDays + ' 天</div>';
+    }
+
+    el.innerHTML = html || '<div class="text-muted">无数据</div>';
   },
 
   updateTrainingStatus() {
@@ -113,6 +221,7 @@ const UI = {
       document.getElementById('training-bar').style.width = '0%';
       document.getElementById('training-bar').style.background = '#e74c3c';
       document.getElementById('training-eta').textContent = '模型已失败';
+      document.getElementById('training-detail').classList.add('hidden');
       return;
     }
 
@@ -124,40 +233,48 @@ const UI = {
     if (prog.interruptions > 0) {
       document.getElementById('training-eta').textContent += ' | 中断 ' + prog.interruptions + ' 次';
     }
+
+    // 训练实时指标
+    document.getElementById('training-detail').classList.remove('hidden');
+    document.getElementById('train-sub-phase').textContent = prog.subPhase || '';
+    document.getElementById('train-loss').textContent = prog.loss ? prog.loss.toFixed(4) : '--';
+    document.getElementById('train-gpu-util').textContent = prog.gpuUtilization ? prog.gpuUtilization.toFixed(0) + '%' : '--';
+    document.getElementById('train-stability').textContent = prog.stability ? prog.stability.toFixed(0) + '%' : '--';
+    const stabilityEl = document.getElementById('train-stability');
+    if (prog.stability < 85) stabilityEl.className = 'font-mono text-danger';
+    else if (prog.stability < 95) stabilityEl.className = 'font-mono text-amber';
+    else stabilityEl.className = 'font-mono text-accent';
+    if (prog.trainingEventPenalty > 0) {
+      document.getElementById('train-event').classList.remove('hidden');
+      document.getElementById('train-event').textContent = '训练干扰中';
+    } else {
+      document.getElementById('train-event').classList.add('hidden');
+    }
+    document.getElementById('train-checkpoints').textContent = prog.checkpoints || 0;
   },
 
-  updateLeaderboard() {
-    const s = Game.state;
-    const el = document.getElementById('leaderboard');
-
-    let allModels = [];
-    // 玩家模型
-    for (const model of s.deployedModels) {
-      allModels.push({ ...model, isPlayer: true, company: Game.state.companyName || '你' });
-    }
-    // 竞争对手模型
-    for (const model of Competitor.state.models) {
-      allModels.push({ ...model, isPlayer: false });
-    }
-
-    allModels.sort((a, b) => b.score - a.score);
-    for (let i = 0; i < allModels.length; i++) {
-      allModels[i].rank = i + 1;
-    }
-
+  updateResearch() {
+    const el = document.getElementById('research-progress');
+    const researching = Research.getResearchingList();
     let html = '';
-    for (let i = 0; i < Math.min(10, allModels.length); i++) {
-      const m = allModels[i];
-      const rankClass = m.rank === 1 ? 'rank-1' : m.rank === 2 ? 'rank-2' : m.rank === 3 ? 'rank-3' : '';
-      const playerClass = m.isPlayer ? 'text-accent font-bold' : '';
-      const openTag = m.openSource ? ' [开源]' : '';
-      const sotaTag = m.rank === 1 ? ' <span class="tag tag-amber">SOTA</span>' : '';
-      html += '<div class="flex justify-between text-xs ' + playerClass + '">' +
-        '<span class="' + rankClass + '">#' + m.rank + ' ' + (m.isPlayer ? m.name : m.company) + openTag + sotaTag + '</span>' +
-        '<span class="font-mono">' + m.score.toFixed(1) + '</span>' +
-        '</div>';
+    if (researching.length === 0) {
+      html = '<div class="text-muted italic">暂无研发项目</div>';
     }
-    el.innerHTML = html || '<div class="text-muted italic">暂无数据</div>';
+    for (const r of researching) {
+      html += '<div class="mb-1"><div class="flex justify-between text-xs"><span>' + r.name + '</span><span class="font-mono">' + r.remaining + '天</span></div>' +
+        '<div class="progress-bar mt-0.5"><div class="progress-fill" style="width:' + r.progress + '%"></div></div></div>';
+    }
+    el.innerHTML = html || '<div class="text-muted italic">暂无研发项目</div>';
+
+    const unlockedEl = document.getElementById('unlocked-techs');
+    const techStatus = Research.getTechStatus();
+    let unlockedHtml = '';
+    for (const [key, tech] of Object.entries(techStatus)) {
+      if (tech.status === 'unlocked') {
+        unlockedHtml += '<div class="text-xs text-accent">' + tech.name + ' <span class="text-muted">' + tech.effect + '</span></div>';
+      }
+    }
+    unlockedEl.innerHTML = unlockedHtml || '<div class="text-muted italic">暂无已解锁技术</div>';
   },
 
   updateGPUInventory() {
@@ -177,27 +294,117 @@ const UI = {
     el.innerHTML = html || '<div class="text-muted italic">暂无GPU</div>';
 
     const totalPower = Game.getTotalPowerMW();
-    const gpuPower = Game.getGPUPowerMW();
-    const coolingLoad = gpuPower * CONFIG.COOLING_RATIO;
-    document.getElementById('panel-power').textContent = totalPower.toFixed(1);
+    const ratedPower = Game.getRatedPowerMW();
+    const actualGPUPower = Game.getGPUActualPowerMW();
+    const coolingLoad = actualGPUPower * CONFIG.COOLING_RATIO;
+    const isTraining = !!Game.state.activeTraining;
+    const inferenceGPUs = Game.getInferenceGPUs();
+    const availableGPUs = Game.getAvailableGPUs();
+    document.getElementById('panel-power').textContent = totalPower.toFixed(2);
     document.getElementById('panel-power-cap').textContent = s.powerCapacityMW + '';
-    document.getElementById('panel-cooling-load').textContent = coolingLoad.toFixed(1);
+    document.getElementById('panel-cooling-load').textContent = coolingLoad.toFixed(2);
     document.getElementById('panel-cooling-cap').textContent = s.coolingCapacityMW + '';
-    document.getElementById('panel-gpu-total').textContent = s.gpuTotal;
+    document.getElementById('panel-gpu-total').textContent = s.gpuTotal + (inferenceGPUs > 0 ? ' (推理 ' + inferenceGPUs + ' / 可用 ' + availableGPUs + ')' : '');
 
-    // 超载/冷却警告
+    // 功耗状态提示
     const powerEl = document.getElementById('panel-power');
     const coolingEl = document.getElementById('panel-cooling-load');
     if (totalPower > s.powerCapacityMW) {
       powerEl.className = 'font-mono text-danger';
+    } else if (isTraining) {
+      powerEl.className = 'font-mono text-amber';
     } else {
-      powerEl.className = 'font-mono';
+      powerEl.className = 'font-mono text-muted';
     }
     if (coolingLoad > s.coolingCapacityMW) {
       coolingEl.className = 'font-mono text-danger';
+    } else if (isTraining) {
+      coolingEl.className = 'font-mono text-amber';
     } else {
-      coolingEl.className = 'font-mono';
+      coolingEl.className = 'font-mono text-muted';
     }
+  },
+
+  updateProducts() {
+    const el = document.getElementById('products-list');
+    if (!el) return;
+    const s = Game.state;
+    const models = s.deployedModels;
+
+    if (models.length === 0) {
+      el.innerHTML = '<div class="text-muted italic">尚未部署任何模型。完成训练后选择GPU部署模型即可产生收入。</div>';
+      return;
+    }
+
+    let html = '';
+    for (let i = 0; i < models.length; i++) {
+      const model = models[i];
+      const scoreColor = model.score >= 70 ? '#00cc66' : model.score >= 50 ? '#e6a817' : '#e74c3c';
+      const label = model.label || formatParams(model.params) || model.scale || '--';
+
+      // 部署GPU信息
+      const deployGPUs = model.deploymentGPUs || {};
+      const deployTotal = Object.values(deployGPUs).reduce((a, b) => a + b, 0);
+      const deployEquiv = effectiveInferenceGPUs(deployGPUs);
+      const deployStr = Object.entries(deployGPUs).map(([k, v]) => k + '×' + v).join(', ') || '未分配';
+
+      // 计算该模型的日收入
+      const scaleKey = paramsToScaleKey(model.params || 0);
+      const pricePerToken = CONFIG.API_PRICE_PER_TOKEN[scaleKey] || 3e-9;
+      const dau = CONFIG.DAILY_ACTIVE_USERS[scaleKey] || 500000;
+      const openSourceMult = model.openSource ? 0 : 1;
+      let incomeBonus = 1.0;
+      if (model.techs && model.techs.includes('speculative')) incomeBonus += CONFIG.TECH_RESEARCH.speculative.incomeBonus;
+      if (model.techs && model.techs.includes('kv_cache')) incomeBonus += CONFIG.TECH_RESEARCH.kv_cache.incomeBonus;
+      const dailyTokens = dau * CONFIG.AVG_DAILY_TOKENS;
+      // 收入受部署GPU数量影响（按型号折算等效H100，不足时收入按比例降低）
+      const recInference = recommendedInferenceGPUs(model.params || 0);
+      const deployRatio = recInference > 0 ? Math.min(1, deployEquiv / recInference) : 1;
+      const dailyIncome = model.openSource ? 0 : dailyTokens * pricePerToken * openSourceMult * incomeBonus * Game.getIncomeMultiplier() * deployRatio;
+
+      html += '<div class="border border-border rounded p-2 mb-1">' +
+        '<div class="flex justify-between items-center">' +
+        '<span class="font-bold text-sm">' + model.name + '</span>' +
+        '<div class="flex items-center gap-2">' +
+        '<span class="font-mono text-base" style="color:' + scoreColor + '">' + model.score.toFixed(1) + '</span>' +
+        '<button onclick="UI.removeDeployedModel(' + i + ')" class="text-danger hover:text-white text-xs px-1 rounded border border-danger/40 hover:bg-danger/20" title="下架模型(释放推理GPU)">下架</button>' +
+        '</div>' +
+        '</div>' +
+        '<div class="text-xs text-muted mt-0.5">' + label + ' | ' + (model.openSource ? '开源' : '闭源') + ' | 推理 <span class="text-amber font-mono">' + deployTotal + ' GPU</span> (等效H100 ×<span class="text-amber font-mono">' + deployEquiv.toFixed(1) + '</span>)</div>' +
+        '<div class="text-xs text-muted mt-0.5">部署: ' + deployStr + (deployRatio < 1 ? ' <span class="text-danger">(不足, 收入' + Math.round(deployRatio * 100) + '%)</span>' : '') + '</div>' +
+        '<div class="grid grid-cols-2 gap-0.5 mt-1 text-xs">' +
+        '<span class="text-muted">日收入</span><span class="font-mono text-right text-accent">' + (model.openSource ? 'N/A (开源)' : '+$' + Economy.formatMoney(dailyIncome)) + '</span>';
+
+      // 基准测试分项
+      if (model.benchmarkBreakdown) {
+        for (const [bk, val] of Object.entries(model.benchmarkBreakdown)) {
+          const bm = CONFIG.BENCHMARKS[bk];
+          if (bm) {
+            html += '<span class="text-muted">' + bm.name + '</span><span class="font-mono text-right">' + val.toFixed(1) + '</span>';
+          }
+        }
+      }
+
+      // 使用的技术
+      if (model.techs && model.techs.length > 0) {
+        const techNames = model.techs.map(t => CONFIG.TECH_RESEARCH[t] ? CONFIG.TECH_RESEARCH[t].name : t).join(', ');
+        html += '<span class="text-muted col-span-2 mt-1">技术: ' + techNames + '</span>';
+      }
+
+      html += '</div></div>';
+    }
+    el.innerHTML = html;
+  },
+
+  removeDeployedModel(idx) {
+    const s = Game.state;
+    const model = s.deployedModels[idx];
+    if (!model) return;
+    const freedGPUs = model.deploymentGPUs ? Object.values(model.deploymentGPUs).reduce((a, b) => a + b, 0) : 0;
+    s.deployedModels.splice(idx, 1);
+    Game.addLog('下架模型: ' + model.name + ' (释放 ' + freedGPUs + ' GPU)');
+    UI.toast('已下架 ' + model.name + ', 释放 ' + freedGPUs + ' GPU');
+    UI.update();
   },
 
   updateEventLog() {
@@ -216,8 +423,11 @@ const UI = {
       case 'demolish-gpu': html = UI.buildDemolishGPUModal(); break;
       case 'expand-power': html = UI.buildExpandPowerModal(); break;
       case 'expand-cooling': html = UI.buildExpandCoolingModal(); break;
+      case 'expand-datacenter': html = UI.buildExpandDatacenterModal(); break;
+      case 'collect-data': html = UI.buildCollectDataModal(); break;
       case 'new-training': html = UI.buildTrainingModal(); break;
       case 'hire-researcher': html = UI.buildHireResearcherModal(); break;
+      case 'research': html = UI.buildResearchModal(); break;
     }
 
     content.innerHTML = html;
@@ -228,19 +438,154 @@ const UI = {
     else if (type === 'demolish-gpu') UI.bindDemolishGPUEvents();
     else if (type === 'expand-power') UI.bindExpandPowerEvents();
     else if (type === 'expand-cooling') UI.bindExpandCoolingEvents();
+    else if (type === 'expand-datacenter') UI.bindExpandDatacenterEvents();
+    else if (type === 'collect-data') UI.bindCollectDataEvents();
     else if (type === 'new-training') UI.bindTrainingEvents();
     else if (type === 'hire-researcher') UI.bindHireResearcherEvents();
+    else if (type === 'research') UI.bindResearchEvents();
   },
 
   hideModal() {
     document.getElementById('modal-overlay').classList.add('hidden');
   },
 
+  showDeleteConfirm() {
+    const html = '<h2 class="text-lg font-bold text-danger mb-3">删除存档</h2>' +
+      '<div class="text-sm text-muted mb-4">确定要删除存档吗？所有游戏进度将永久丢失，游戏将重置回初始状态。</div>' +
+      '<div class="flex gap-2 justify-end">' +
+      '<button onclick="UI.hideModal()" class="modal-btn">取消</button>' +
+      '<button onclick="UI.hideModal();SaveSystem.delete()" class="modal-btn" style="border-color:#e74c3c;color:#e74c3c">确认删除</button>' +
+      '</div>';
+    document.getElementById('modal-content').innerHTML = html;
+    document.getElementById('modal-overlay').classList.remove('hidden');
+  },
+
+  showBankruptcyModal() {
+    const html = '<h2 class="text-lg font-bold text-danger mb-3">公司破产</h2>' +
+      '<div class="text-sm text-muted mb-2">' + Game.state.companyName + ' 已因资金链断裂而破产。</div>' +
+      '<div class="text-xs text-muted mb-2">运营天数: ' + Game.state.day + ' | 最终估值: $' + Economy.formatMoney(Game.state.valuation) + '</div>' +
+      '<div class="text-xs text-muted mb-4">所有资产将被清算，存档将被删除。</div>' +
+      '<div class="flex gap-2 justify-end">' +
+      '<button onclick="UI.hideModal();SaveSystem.delete()" class="modal-btn" style="border-color:#e74c3c;color:#e74c3c">确认破产</button>' +
+      '</div>';
+    document.getElementById('modal-content').innerHTML = html;
+    document.getElementById('modal-overlay').classList.remove('hidden');
+  },
+
+  // === 部署模型模态框 ===
+  _pendingModel: null,
+
+  showDeployModelModal(model) {
+    UI._pendingModel = model;
+    const s = Game.state;
+    const recInference = recommendedInferenceGPUs(model.params);
+    const scoreColor = model.score >= 70 ? '#00cc66' : model.score >= 50 ? '#e6a817' : '#e74c3c';
+
+    let html = '<h2 class="text-lg font-bold text-accent mb-2">部署模型</h2>';
+    html += '<div class="bg-[#111118] rounded p-3 mb-3">';
+    html += '<div class="flex justify-between items-center">';
+    html += '<span class="font-bold text-sm">' + model.name + '</span>';
+    html += '<span class="font-mono text-base" style="color:' + scoreColor + '">' + model.score.toFixed(1) + '</span>';
+    html += '</div>';
+    html += '<div class="text-xs text-muted mt-0.5">参数 ' + model.label + ' | ' + (model.openSource ? '开源' : '闭源') + '</div>';
+    html += '<div class="text-xs text-muted mt-1">最少 ' + recInference + ' GPU (以H100计, 低算力型号需更多)</div>';
+    html += '</div>';
+
+    // GPU选择
+    const trainingAlloc = s.activeTraining ? (s.activeTraining.gpuAllocation || {}) : {};
+    const inferenceAlloc = Game.getInferenceGPUAllocation();
+    html += '<div class="text-xs mb-1">选择部署GPU型号及数量 (每型号最少需求已按算力折算):</div>';
+    html += '<div class="grid grid-cols-1 gap-1 mb-2" id="deploy-gpu-grid">';
+    for (const [key, gpu] of Object.entries(CONFIG.GPUS)) {
+      const owned = s.gpuInventory[key] || 0;
+      const trainingUsed = trainingAlloc[key] || 0;
+      const inferenceUsed = inferenceAlloc[key] || 0;
+      const avail = Math.max(0, owned - trainingUsed - inferenceUsed);
+      const recType = recommendedInferenceGPUsForType(model.params, key);
+      const colorHex = '#' + gpu.color.toString(16).padStart(6, '0');
+      html += '<div class="flex items-center gap-2 p-1 border border-border rounded text-xs' + (owned === 0 ? ' opacity-40' : '') + '">' +
+        '<span class="inline-block w-2 h-2 rounded-full" style="background:' + colorHex + '"></span>' +
+        '<span class="font-bold w-16">' + key + '</span>' +
+        '<span class="text-muted flex-1">' + gpu.tflops + ' TFLOPS</span>' +
+        '<span class="text-muted">可用 ' + avail + '/' + owned + '</span>' +
+        '<span class="text-accent" title="最少推理数">最少' + recType + '</span>' +
+        '<input type="number" class="modal-input w-16 deploy-gpu-input" data-gpu="' + key + '" data-max="' + avail + '" value="' + Math.min(recType, avail) + '" min="0" max="' + avail + '"' + (owned === 0 ? ' disabled' : '') + '>' +
+        '</div>';
+    }
+    html += '</div>';
+    html += '<div class="text-xs mb-3">已分配: <span id="deploy-gpu-total" class="font-mono text-accent">0</span> GPU</div>';
+
+    html += '<div class="flex gap-2 justify-end">';
+    html += '<button onclick="UI.skipDeploy()" class="modal-btn">暂不部署</button>';
+    html += '<button id="confirm-deploy" class="modal-btn primary">部署模型</button>';
+    html += '</div>';
+
+    document.getElementById('modal-content').innerHTML = html;
+    document.getElementById('modal-overlay').classList.remove('hidden');
+
+    // 绑定事件
+    const updateDeployStats = () => {
+      let total = 0;
+      document.querySelectorAll('.deploy-gpu-input').forEach(inp => {
+        const v = Math.max(0, parseInt(inp.value) || 0);
+        const max = parseInt(inp.dataset.max) || 0;
+        if (v > max) { inp.value = max; }
+        total += Math.min(v, max);
+      });
+      document.getElementById('deploy-gpu-total').textContent = total;
+    };
+    document.querySelectorAll('.deploy-gpu-input').forEach(inp => {
+      inp.addEventListener('input', updateDeployStats);
+    });
+    updateDeployStats();
+
+    document.getElementById('confirm-deploy').addEventListener('click', () => {
+      const deploymentGPUs = {};
+      let total = 0;
+      document.querySelectorAll('.deploy-gpu-input').forEach(inp => {
+        const v = Math.max(0, parseInt(inp.value) || 0);
+        if (v > 0) {
+          deploymentGPUs[inp.dataset.gpu] = v;
+          total += v;
+        }
+      });
+      if (total === 0) {
+        UI.toast('请至少分配1张GPU用于推理');
+        return;
+      }
+      // 部署模型
+      const modelName = UI._pendingModel.name;
+      UI._pendingModel.deployed = true;
+      UI._pendingModel.deploymentGPUs = deploymentGPUs;
+      Game.state.deployedModels.push(UI._pendingModel);
+      UI._pendingModel = null;
+      UI.hideModal();
+      Game.addLog('模型 ' + modelName + ' 已部署，推理占用 ' + total + ' GPU');
+      UI.toast('模型已部署! 推理占用 ' + total + ' GPU');
+
+      // 部署后检查供电（推理负载上升可能超载）
+      if (Game.getTotalPowerMW() > Game.state.powerCapacityMW) {
+        Game.state.blackoutDays = 3;
+        Game.addLog('警告: 部署后功耗超载! 供电不足，开始断电!');
+        UI.toast('功耗超载! 断电3天!');
+      }
+      UI.update();
+    });
+  },
+
+  skipDeploy() {
+    if (UI._pendingModel) {
+      Game.addLog(UI._pendingModel.name + ' 暂未部署 (可在产品面板中部署)');
+      UI._pendingModel = null;
+    }
+    UI.hideModal();
+  },
+
   // === 购买GPU模态框 ===
   buildBuyGPUModal() {
     const s = Game.state;
     let html = '<h2 class="text-lg font-bold text-accent mb-3">购买 GPU 机架</h2>';
-    html += '<p class="text-xs text-muted mb-3">1 Rack = 8 GPU</p>';
+    html += '<p class="text-xs text-muted mb-3">1 Rack = 8 GPU | 部分型号需达到指定天数后解锁</p>';
 
     if (s.buyBanDays > 0) {
       html += '<div class="text-danger text-sm mb-3">芯片禁运中，剩余 ' + s.buyBanDays + ' 天</div>';
@@ -249,12 +594,17 @@ const UI = {
     html += '<div class="grid grid-cols-2 gap-2 mb-3">';
     for (const [key, gpu] of Object.entries(CONFIG.GPUS)) {
       const colorHex = '#' + gpu.color.toString(16).padStart(6, '0');
-      html += '<div class="gpu-option p-2 border border-border rounded cursor-pointer hover:border-accent" data-gpu="' + key + '">' +
+      const locked = s.valuation < gpu.unlockValuation;
+      const lockedClass = locked ? 'locked' : '';
+      const lockedHtml = locked
+        ? '<div class="text-xs text-danger mt-1">市值 $' + Economy.formatMoney(gpu.unlockValuation) + ' 解锁</div>'
+        : '<div class="text-xs text-accent mt-1">$' + Economy.formatMoney(gpu.price) + ' / GPU</div>';
+      html += '<div class="gpu-option p-2 border border-border rounded ' + (locked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:border-accent') + ' ' + lockedClass + '" data-gpu="' + key + '" data-locked="' + locked + '">' +
         '<div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full" style="background:' + colorHex + '"></span>' +
         '<span class="font-bold text-sm">' + gpu.name + '</span></div>' +
         '<div class="text-xs text-muted mt-1">' + gpu.arch + ' | ' + gpu.tflops + ' TFLOPS</div>' +
         '<div class="text-xs text-muted">' + gpu.vram + 'GB ' + gpu.vram_type + ' | ' + gpu.power + 'W</div>' +
-        '<div class="text-xs text-accent mt-1">$' + Economy.formatMoney(gpu.price) + ' / GPU</div>' +
+        lockedHtml +
         '</div>';
     }
     html += '</div>';
@@ -276,7 +626,7 @@ const UI = {
   },
 
   bindBuyGPUEvents() {
-    let selectedGpu = 'H100';
+    let selectedGpu = 'A100';
     const updateCost = () => {
       const racks = parseInt(document.getElementById('gpu-racks').value) || 0;
       const gpu = CONFIG.GPUS[selectedGpu];
@@ -286,6 +636,10 @@ const UI = {
 
     document.querySelectorAll('.gpu-option').forEach(el => {
       el.addEventListener('click', () => {
+        if (el.dataset.locked === 'true') {
+          UI.toast(CONFIG.GPUS[el.dataset.gpu].name + ' 尚未解锁，需提升市值');
+          return;
+        }
         document.querySelectorAll('.gpu-option').forEach(e => e.classList.remove('border-accent', 'bg-accent/5'));
         el.classList.add('border-accent', 'bg-accent/5');
         selectedGpu = el.dataset.gpu;
@@ -293,9 +647,12 @@ const UI = {
       });
     });
 
-    // 默认选中H100
-    const h100El = document.querySelector('.gpu-option[data-gpu="H100"]');
-    if (h100El) h100El.classList.add('border-accent', 'bg-accent/5');
+    // 默认选中第一个已解锁的GPU
+    const firstUnlocked = document.querySelector('.gpu-option[data-locked="false"]');
+    if (firstUnlocked) {
+      firstUnlocked.classList.add('border-accent', 'bg-accent/5');
+      selectedGpu = firstUnlocked.dataset.gpu;
+    }
 
     document.getElementById('gpu-racks').addEventListener('input', updateCost);
     updateCost();
@@ -311,18 +668,24 @@ const UI = {
   // === 拆除GPU模态框 ===
   buildDemolishGPUModal() {
     const s = Game.state;
+    const trainingAlloc = s.activeTraining ? (s.activeTraining.gpuAllocation || {}) : {};
+    const inferenceAlloc = Game.getInferenceGPUAllocation();
     let html = '<h2 class="text-lg font-bold text-accent mb-3">拆除 GPU</h2>';
-    html += '<p class="text-xs text-muted mb-3">选择要拆除的GPU型号和数量，拆除返还50%购买价</p>';
+    html += '<p class="text-xs text-muted mb-2">选择要拆除的GPU型号和数量，拆除返还50%购买价</p>';
+    html += '<p class="text-xs text-amber mb-3">训练中/推理中的GPU不可拆除，需先放弃训练或下架模型</p>';
 
     html += '<div class="grid grid-cols-2 gap-2 mb-3">';
     for (const [key, gpu] of Object.entries(CONFIG.GPUS)) {
       const count = s.gpuInventory[key] || 0;
+      const used = (trainingAlloc[key] || 0) + (inferenceAlloc[key] || 0);
+      const avail = Math.max(0, count - used);
       const refund = Math.floor(gpu.price * 0.5);
       const colorHex = '#' + gpu.color.toString(16).padStart(6, '0');
-      html += '<div class="demolish-option p-2 border border-border rounded cursor-pointer hover:border-danger ' + (count === 0 ? 'opacity-40' : '') + '" data-gpu="' + key + '">' +
+      const disabled = avail === 0;
+      html += '<div class="demolish-option p-2 border border-border rounded cursor-pointer hover:border-danger ' + (disabled ? 'opacity-40 pointer-events-none' : '') + '" data-gpu="' + key + '">' +
         '<div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full" style="background:' + colorHex + '"></span>' +
         '<span class="font-bold text-sm">' + gpu.name + '</span></div>' +
-        '<div class="text-xs text-muted">库存: ' + count + ' 张 | 返还 $' + Economy.formatMoney(refund) + '/张</div>' +
+        '<div class="text-xs text-muted">可拆: ' + avail + '/' + count + ' 张' + (used > 0 ? ' <span class="text-amber">(占用' + used + ')</span>' : '') + ' | 返还 $' + Economy.formatMoney(refund) + '/张</div>' +
         '</div>';
     }
     html += '</div>';
@@ -363,7 +726,13 @@ const UI = {
         document.querySelectorAll('.demolish-option').forEach(e => e.classList.remove('border-danger', 'bg-danger/5'));
         el.classList.add('border-danger', 'bg-danger/5');
         selectedGpu = el.dataset.gpu;
-        maxQty = Game.state.gpuInventory[selectedGpu] || 0;
+        // 可拆除数量 = 总库存 - 训练占用 - 推理占用
+        const s = Game.state;
+        const trainingAlloc = s.activeTraining ? (s.activeTraining.gpuAllocation || {}) : {};
+        const inferenceAlloc = Game.getInferenceGPUAllocation();
+        const total = s.gpuInventory[selectedGpu] || 0;
+        const used = (trainingAlloc[selectedGpu] || 0) + (inferenceAlloc[selectedGpu] || 0);
+        maxQty = Math.max(0, total - used);
         document.getElementById('demolish-qty').max = maxQty;
         updateRefund();
       });
@@ -445,6 +814,172 @@ const UI = {
     });
   },
 
+  // === 扩容机房模态框 ===
+  buildExpandDatacenterModal() {
+    const s = Game.state;
+    const nextCost = CONFIG.DATACENTER_EXPAND_BASE_COST * Math.pow(CONFIG.DATACENTER_EXPAND_EXPONENT, s.datacenterExpands);
+    const currentRows = Datacenter.ROWS;
+    const currentCols = Datacenter.COLS;
+    const currentSlots = currentRows * currentCols;
+    const newRows = currentRows + 2;
+    const newCols = currentCols + 4;
+    const newSlots = newRows * newCols;
+
+    let html = '<h2 class="text-lg font-bold text-accent mb-3">扩容数据中心</h2>';
+    html += '<div class="text-xs text-muted mb-2">每次扩容增加 2 行 x 4 列，扩容无上限，但费用指数增长</div>';
+    html += '<div class="bg-[#111118] rounded p-3 mb-3 text-xs">';
+    html += '<div class="grid grid-cols-2 gap-1">';
+    html += '<span class="text-muted">当前规模</span><span class="font-mono">' + currentRows + ' x ' + currentCols + ' (' + currentSlots + ' 机架)</span>';
+    html += '<span class="text-muted">扩容后</span><span class="font-mono text-accent">' + newRows + ' x ' + newCols + ' (' + newSlots + ' 机架)</span>';
+    html += '<span class="text-muted">已扩容次数</span><span class="font-mono">' + s.datacenterExpands + ' 次</span>';
+    html += '</div></div>';
+    html += '<div class="text-sm mb-3">本次扩容费用: <span id="datacenter-cost" class="text-accent font-bold">$' + Economy.formatMoney(nextCost) + '</span></div>';
+    if (s.cash < nextCost) {
+      html += '<div class="text-danger text-xs mb-3">资金不足! 还差 $' + Economy.formatMoney(nextCost - s.cash) + '</div>';
+    }
+    html += '<div class="text-xs text-muted mb-3">下次扩容费用: $' + Economy.formatMoney(CONFIG.DATACENTER_EXPAND_BASE_COST * Math.pow(CONFIG.DATACENTER_EXPAND_EXPONENT, s.datacenterExpands + 1)) + '</div>';
+    html += '<div class="flex gap-2 justify-end">' +
+      '<button onclick="UI.hideModal()" class="modal-btn">取消</button>' +
+      '<button id="confirm-expand-dc" class="modal-btn primary" ' + (s.cash < nextCost ? 'disabled' : '') + '>确认扩容</button>' +
+      '</div>';
+    return html;
+  },
+
+  bindExpandDatacenterEvents() {
+    document.getElementById('confirm-expand-dc').addEventListener('click', () => {
+      Economy.expandDatacenter();
+      UI.hideModal();
+    });
+  },
+
+  // === 数据采集模态框 ===
+  _selectedDataSource: 'web_crawl',
+
+  buildCollectDataModal() {
+    const stats = DataCollection.getStats();
+    const effectiveQuality = DataCollection.getEffectiveQuality();
+    // 统一质量颜色阈值：>=0.85 绿, >=0.75 琥珀, >=0.60 浅琥珀, <0.60 红
+    const qualityLabel = effectiveQuality >= 0.85 ? '极高' : effectiveQuality >= 0.75 ? '良好' : effectiveQuality >= 0.60 ? '一般' : '低';
+    const qualityColor = effectiveQuality >= 0.85 ? '#00cc66' : effectiveQuality >= 0.75 ? '#e6a817' : effectiveQuality >= 0.60 ? '#e8a838' : '#e74c3c';
+    const s = Game.state;
+
+    let html = '<h2 class="text-lg font-bold text-accent mb-3">采集训练数据</h2>';
+    html += '<div class="text-xs text-muted mb-3">数据是大模型的基石。从不同来源采集数据，质量越高训练效果越好，但成本也越高。<br>建议训练前采集 50B+ tokens 数据。</div>';
+
+    // 数据总览面板
+    html += '<div class="bg-[#111118] rounded p-3 mb-3">';
+    html += '<div class="grid grid-cols-2 gap-2 text-xs">';
+    html += '<div><span class="text-muted">已采总量</span><div class="font-mono text-accent text-base">' + stats.totalTokens + 'B tokens</div></div>';
+    html += '<div><span class="text-muted">平均质量</span><div class="font-mono text-base" style="color:' + qualityColor + '">' + qualityLabel + ' (' + (effectiveQuality * 100).toFixed(0) + '%)</div></div>';
+    html += '</div>';
+    // 质量进度条
+    html += '<div class="progress-bar mt-2"><div class="progress-fill" style="width:' + (effectiveQuality * 100) + '%;background:' + qualityColor + '"></div></div>';
+    html += '</div>';
+
+    // 数据源列表
+    html += '<div class="text-xs text-muted uppercase mb-1">数据源 (点击选择)</div>';
+    html += '<div class="grid grid-cols-2 gap-2 mb-3">';
+    const selectedSrc = UI._selectedDataSource || 'web_crawl';
+    for (const [key, src] of Object.entries(CONFIG.DATA_SOURCES)) {
+      const current = DataCollection.state.sources[key] || 0;
+      // 统一质量颜色阈值
+      const qColor = src.qualityBase >= 0.85 ? '#00cc66' : src.qualityBase >= 0.75 ? '#e6a817' : src.qualityBase >= 0.60 ? '#e8a838' : '#e74c3c';
+      const hasData = current > 0;
+      const isSelected = key === selectedSrc;
+      // 选中状态: 亮绿边框+高亮背景; 已采集: 绿边框+淡绿背景; 默认: 灰边框
+      let borderColor, bgColor;
+      if (isSelected) {
+        borderColor = '#00ff88';
+        bgColor = 'rgba(0,255,136,0.15)';
+      } else if (hasData) {
+        borderColor = '#00cc66';
+        bgColor = 'rgba(0,204,102,0.05)';
+      } else {
+        borderColor = '#333';
+        bgColor = 'transparent';
+      }
+      html += '<div class="data-source-option p-2 border rounded cursor-pointer text-xs" style="border-color:' + borderColor + ';background:' + bgColor + ';border-width:2px" data-source="' + key + '">' +
+        '<div class="flex justify-between items-center"><span class="font-bold">' + src.name + '</span>' +
+        '<span style="font-size:10px;padding:1px 6px;border:1px solid ' + qColor + ';color:' + qColor + ';border-radius:3px">' + src.category + '</span></div>' +
+        '<div class="text-muted mt-0.5">' + src.desc + '</div>' +
+        '<div class="flex justify-between mt-1">' +
+        '<span style="color:' + qColor + '">质量 ' + (src.qualityBase * 100).toFixed(0) + '%</span>' +
+        '<span class="text-muted">$' + Economy.formatMoney(src.cost) + '/10B</span>' +
+        '</div>' +
+        (hasData ? '<div class="mt-0.5 font-mono" style="color:#00cc66">已采: ' + current + 'B</div>' : '') +
+        '</div>';
+    }
+    html += '</div>';
+
+    // 采集数量
+    html += '<div class="flex items-center gap-2 mb-2">' +
+      '<span class="text-xs text-muted">采集数量:</span>' +
+      '<input id="data-tokens" type="number" class="modal-input w-24" value="10" min="1" max="100">' +
+      '<span class="text-xs text-muted">B tokens</span>' +
+      '</div>';
+    html += '<div class="text-xs text-muted mb-3">预计花费: <span id="data-cost" class="text-accent">$0</span></div>';
+
+    html += '<div class="flex gap-2 justify-end">' +
+      '<button onclick="UI.hideModal()" class="modal-btn">关闭</button>' +
+      '<button id="confirm-collect" class="modal-btn primary">确认采集</button>' +
+      '</div>';
+
+    return html;
+  },
+
+  bindCollectDataEvents() {
+    const updateCost = () => {
+      const tokensB = parseInt(document.getElementById('data-tokens').value) || 0;
+      const src = CONFIG.DATA_SOURCES[UI._selectedDataSource];
+      if (src) {
+        document.getElementById('data-cost').textContent = '$' + Economy.formatMoney(src.cost * (tokensB / 10));
+      }
+    };
+
+    const updateSelectionVisual = (selectedKey) => {
+      document.querySelectorAll('.data-source-option').forEach(el => {
+        const key = el.dataset.source;
+        const current = DataCollection.state.sources[key] || 0;
+        const hasData = current > 0;
+        const isSelected = key === selectedKey;
+        let borderColor, bgColor;
+        if (isSelected) {
+          borderColor = '#00ff88';
+          bgColor = 'rgba(0,255,136,0.15)';
+        } else if (hasData) {
+          borderColor = '#00cc66';
+          bgColor = 'rgba(0,204,102,0.05)';
+        } else {
+          borderColor = '#333';
+          bgColor = 'transparent';
+        }
+        el.style.borderColor = borderColor;
+        el.style.backgroundColor = bgColor;
+      });
+    };
+
+    document.querySelectorAll('.data-source-option').forEach(el => {
+      el.addEventListener('click', () => {
+        UI._selectedDataSource = el.dataset.source;
+        updateSelectionVisual(UI._selectedDataSource);
+        updateCost();
+      });
+    });
+    updateSelectionVisual(UI._selectedDataSource);
+
+    document.getElementById('data-tokens').addEventListener('input', updateCost);
+    updateCost();
+
+    document.getElementById('confirm-collect').addEventListener('click', () => {
+      const tokensB = parseInt(document.getElementById('data-tokens').value) || 0;
+      if (tokensB <= 0) return;
+      DataCollection.buySource(UI._selectedDataSource, tokensB);
+      // 刷新模态框（保留选中的数据源）
+      document.getElementById('modal-content').innerHTML = UI.buildCollectDataModal();
+      UI.bindCollectDataEvents();
+    });
+  },
+
   // === 新建训练模态框 ===
   buildTrainingModal() {
     const s = Game.state;
@@ -462,31 +997,50 @@ const UI = {
     html += '<div class="mb-3"><label class="text-xs text-muted">模型名称</label>' +
       '<input id="train-name" type="text" class="modal-input" value="Model-' + s.day + '" maxlength="20"></div>';
 
-    // 模型规模
-    html += '<div class="mb-3"><label class="text-xs text-muted">模型规模</label><div class="grid grid-cols-2 gap-1 mt-1">';
-    const scales = ['small', 'medium', 'large', 'frontier'];
-    for (const key of scales) {
-      const sc = CONFIG.MODEL_SCALES[key];
-      html += '<div class="scale-option p-2 border border-border rounded cursor-pointer hover:border-accent text-xs" data-scale="' + key + '">' +
-        sc.name + ' (' + sc.label + ')</div>';
-    }
-    html += '</div></div>';
+    // 模型参数（自由滑动条）
+    html += '<div class="mb-3"><label class="text-xs text-muted">模型参数规模</label>' +
+      '<div class="mt-2 mb-1 flex items-center gap-3">' +
+      '<input id="train-params-slider" type="range" min="' + CONFIG.PARAMS_MIN_B + '" max="' + CONFIG.PARAMS_MAX_B + '" step="1" value="70" class="scale-slider flex-1">' +
+      '<span id="train-params-label" class="text-xs font-bold text-accent whitespace-nowrap">70B</span>' +
+      '</div>' +
+      '<div class="relative h-4 text-[10px] text-muted mt-1">' +
+      '<span class="absolute left-0">1B</span>' +
+      '<span class="absolute -translate-x-1/2" style="left:25%">500B</span>' +
+      '<span class="absolute -translate-x-1/2" style="left:50%">1T</span>' +
+      '<span class="absolute right-0">2T</span>' +
+      '</div>' +
+      '<div id="train-params-info" class="text-xs text-muted mt-1">参数 70B | 训练数据 1.4T tokens | 最少推理 14 GPU</div>' +
+      '</div>';
 
     // 数据质量
-    html += '<div class="mb-3"><label class="text-xs text-muted">数据质量</label><div class="grid grid-cols-2 gap-1 mt-1">';
-    for (const [key, dq] of Object.entries(CONFIG.DATA_QUALITY)) {
-      html += '<div class="quality-option p-2 border border-border rounded cursor-pointer hover:border-accent text-xs" data-quality="' + key + '">' +
-        dq.name + ' ($' + Economy.formatMoney(dq.cost) + ')</div>';
-    }
-    html += '</div></div>';
+    html += '<div class="mb-3"><label class="text-xs text-muted">数据状态</label>' +
+      '<div class="text-xs text-accent mt-1">' + DataCollection.getStats().totalTokens + 'B tokens | 质量: ' + DataCollection.getEffectiveQualityLabel() + '</div>' +
+      '<div class="text-xs text-muted">(通过"采集数据"按钮收集训练数据)</div></div>';
 
-    // GPU 分配
-    html += '<div class="mb-3 flex items-center gap-2">' +
-      '<span class="text-xs text-muted">分配GPU:</span>' +
-      '<input id="train-gpu" type="number" class="modal-input w-24" value="' + Math.min(128, s.gpuTotal) + '" min="1" max="' + s.gpuTotal + '">' +
-      '<span class="text-xs text-muted">/ ' + s.gpuTotal + ' 可用</span>' +
-      '</div>';
-    html += '<div class="text-xs text-muted mb-3">预估功耗: <span id="train-power-estimate" class="font-mono">0.0</span> MW | 当前总功耗: <span class="font-mono">' + Game.getTotalPowerMW().toFixed(1) + '</span> MW</div>';
+    // GPU 分配（按型号选择，最少需求按算力折算）
+    const inferenceAlloc = Game.getInferenceGPUAllocation();
+    html += '<div class="mb-2 text-xs">选择训练GPU型号及数量 (每型号最少需求已按算力折算):</div>';
+    html += '<div class="grid grid-cols-1 gap-1 mb-2" id="gpu-alloc-grid">';
+    for (const [key, gpu] of Object.entries(CONFIG.GPUS)) {
+      const owned = s.gpuInventory[key] || 0;
+      const inferenceUsed = inferenceAlloc[key] || 0;
+      const avail = Math.max(0, owned - inferenceUsed);
+      const recType = recommendedInferenceGPUsForType(70e9, key);
+      const defaultVal = Math.min(recType, avail);
+      const colorHex = '#' + gpu.color.toString(16).padStart(6, '0');
+      html += '<div class="flex items-center gap-2 p-1 border border-border rounded text-xs' + (owned === 0 ? ' opacity-40' : '') + '">' +
+        '<span class="inline-block w-2 h-2 rounded-full" style="background:' + colorHex + '"></span>' +
+        '<span class="font-bold w-16">' + key + '</span>' +
+        '<span class="text-muted flex-1">' + gpu.tflops + ' TFLOPS | ' + (gpu.power / 1000) + 'kW</span>' +
+        '<span class="text-muted">可用 ' + avail + '/' + owned + '</span>' +
+        '<span class="text-accent" id="rec-' + key + '" title="最少训练数">最少' + recType + '</span>' +
+        '<input type="number" class="modal-input w-16 gpu-alloc-input" data-gpu="' + key + '" data-max="' + avail + '" data-auto="' + defaultVal + '" value="' + defaultVal + '" min="0" max="' + avail + '"' + (owned === 0 ? ' disabled' : '') + '>' +
+        '</div>';
+    }
+    html += '</div>';
+    html += '<div class="text-xs mb-2">已分配: <span id="train-gpu-total" class="font-mono text-accent">0</span> GPU' +
+      ' | 总算力: <span id="train-tflops-total" class="font-mono text-accent">0</span> TFLOPS</div>';
+    html += '<div class="text-xs text-muted mb-3">训练预估功耗: <span id="train-power-estimate" class="font-mono text-amber">0.0</span> MW | 当前实际功耗: <span class="font-mono">' + Game.getTotalPowerMW().toFixed(2) + '</span> MW / 额定 <span class="font-mono">' + Game.getRatedPowerMW().toFixed(2) + '</span> MW</div>';
 
     // 对齐方法
     html += '<div class="mb-3"><label class="text-xs text-muted">对齐方法</label><div class="flex gap-2 mt-1">' +
@@ -494,11 +1048,16 @@ const UI = {
       '<div class="align-option p-2 border border-border rounded cursor-pointer hover:border-accent text-xs" data-align="dpo">DPO (低成本, 稳定)</div>' +
       '</div></div>';
 
-    // 技术选择
-    html += '<div class="mb-3"><label class="text-xs text-muted">技术选择 (点击选择)</label><div class="grid grid-cols-2 gap-1 mt-1" id="tech-grid">';
-    for (const [key, tech] of Object.entries(CONFIG.TECHNIQUES)) {
-      html += '<div class="tech-card" data-tech="' + key + '">' +
-        '<div class="text-xs font-bold">' + tech.name + '</div>' +
+    // 技术选择（仅显示已解锁，完全可选）
+    html += '<div class="mb-3"><label class="text-xs text-muted">技术选择 (可选，不选也能训练)</label>' +
+      '<div class="text-xs text-muted italic mb-1">技术提升训练效率和模型质量，但非必须。不选任何技术也可以训练基础模型。</div>' +
+      '<div class="grid grid-cols-2 gap-1 mt-1" id="tech-grid">';
+    for (const [key, tech] of Object.entries(CONFIG.TECH_RESEARCH)) {
+      const unlocked = Research.isUnlocked(key);
+      const classes = unlocked ? 'tech-card' : 'tech-card opacity-40';
+      const statusText = unlocked ? '' : ' <span class="text-muted">(需研发)</span>';
+      html += '<div class="' + classes + '" data-tech="' + key + '">' +
+        '<div class="text-xs font-bold">' + tech.name + statusText + '</div>' +
         '<div class="text-xs text-muted">' + tech.desc + '</div>' +
         '<div class="text-xs tag ' + (tech.effBonus ? 'tag-green' : '') + (tech.qualityMod ? 'tag-amber' : '') + (tech.incomeBonus ? 'tag-green' : '') + '">' + tech.effect + '</div>' +
         '</div>';
@@ -520,29 +1079,67 @@ const UI = {
   },
 
   bindTrainingEvents() {
-    let selectedScale = 'medium';
-    let selectedQuality = 'medium';
+    let selectedParams = 70e9; // 默认 70B
     let selectedAlign = 'dpo';
     let selectedOpen = false;
-    let selectedTechs = ['flash_attention', 'mixed_precision', 'zero3'];
+    let selectedTechs = [];
 
-    document.querySelectorAll('.scale-option').forEach(el => {
-      el.addEventListener('click', () => {
-        document.querySelectorAll('.scale-option').forEach(e => e.classList.remove('border-accent', 'bg-accent/5'));
-        el.classList.add('border-accent', 'bg-accent/5');
-        selectedScale = el.dataset.scale;
-      });
-    });
-    document.querySelector('.scale-option[data-scale="medium"]').classList.add('border-accent', 'bg-accent/5');
+    // 自由参数滑动条
+    const slider = document.getElementById('train-params-slider');
+    const paramsLabel = document.getElementById('train-params-label');
+    const paramsInfo = document.getElementById('train-params-info');
 
-    document.querySelectorAll('.quality-option').forEach(el => {
-      el.addEventListener('click', () => {
-        document.querySelectorAll('.quality-option').forEach(e => e.classList.remove('border-accent', 'bg-accent/5'));
-        el.classList.add('border-accent', 'bg-accent/5');
-        selectedQuality = el.dataset.quality;
+    // GPU分配更新（提前定义，供滑动条联动使用）
+    const updateAllocStats = () => {
+      let totalGPU = 0;
+      let totalTFLOPS = 0;
+      let totalPower = 0;
+      document.querySelectorAll('.gpu-alloc-input').forEach(inp => {
+        const v = Math.max(0, parseInt(inp.value) || 0);
+        const max = parseInt(inp.dataset.max) || 0;
+        if (v > max) { inp.value = max; }
+        const actualV = Math.min(v, max);
+        const gpuKey = inp.dataset.gpu;
+        const gpu = CONFIG.GPUS[gpuKey];
+        if (gpu && actualV > 0) {
+          totalGPU += actualV;
+          totalTFLOPS += actualV * gpu.tflops;
+          totalPower += actualV * gpu.power / 1_000_000;
+        }
       });
-    });
-    document.querySelector('.quality-option[data-quality="medium"]').classList.add('border-accent', 'bg-accent/5');
+      document.getElementById('train-gpu-total').textContent = totalGPU;
+      document.getElementById('train-tflops-total').textContent = totalTFLOPS.toLocaleString();
+      const estPower = totalPower * 0.95 * (1 + CONFIG.COOLING_RATIO);
+      document.getElementById('train-power-estimate').textContent = estPower.toFixed(2);
+    };
+
+    const updateParamsDisplay = () => {
+      const bValue = parseInt(slider.value);
+      selectedParams = bValue * 1e9;
+      const labelStr = formatParams(selectedParams);
+      paramsLabel.textContent = labelStr;
+      const tokens = selectedParams * CONFIG.CHINCHILLA_RATIO;
+      const tokensStr = formatParams(tokens);
+      const recInference = recommendedInferenceGPUs(selectedParams);
+      paramsInfo.textContent = '参数 ' + labelStr + ' | 训练数据 ' + tokensStr + ' tokens | 最少 ' + recInference + ' GPU (H100)';
+      // 按型号联动最少需求数（用户未手动修改时自动同步）
+      document.querySelectorAll('.gpu-alloc-input').forEach(inp => {
+        const key = inp.dataset.gpu;
+        const rec = recommendedInferenceGPUsForType(selectedParams, key);
+        const recEl = document.getElementById('rec-' + key);
+        if (recEl) recEl.textContent = '最少' + rec;
+        const autoVal = parseInt(inp.dataset.auto) || 0;
+        if ((parseInt(inp.value) || 0) === autoVal) {
+          const max = parseInt(inp.dataset.max) || 0;
+          const newVal = Math.min(rec, max);
+          inp.value = newVal;
+          inp.dataset.auto = newVal;
+        }
+      });
+      updateAllocStats();
+    };
+    slider.addEventListener('input', updateParamsDisplay);
+    updateParamsDisplay();
 
     document.querySelectorAll('.align-option').forEach(el => {
       el.addEventListener('click', () => {
@@ -562,7 +1159,7 @@ const UI = {
     });
     document.querySelector('.open-option[data-open="false"]').classList.add('border-accent', 'bg-accent/5');
 
-    document.querySelectorAll('.tech-card').forEach(el => {
+    document.querySelectorAll('.tech-card:not(.opacity-40)').forEach(el => {
       el.addEventListener('click', () => {
         const key = el.dataset.tech;
         if (selectedTechs.includes(key)) {
@@ -573,33 +1170,37 @@ const UI = {
           el.classList.add('selected');
         }
       });
-      if (selectedTechs.includes(el.dataset.tech)) {
-        el.classList.add('selected');
-      }
     });
 
-    // 功耗预估更新
-    const updatePowerEstimate = () => {
-      const gpuCount = parseInt(document.getElementById('train-gpu').value) || 0;
-      const avgPower = Game.getGPUPowerMW() / Math.max(1, Game.state.gpuTotal);
-      const estPower = avgPower * gpuCount * (1 + CONFIG.COOLING_RATIO);
-      document.getElementById('train-power-estimate').textContent = estPower.toFixed(1);
-    };
-    document.getElementById('train-gpu').addEventListener('input', updatePowerEstimate);
-    updatePowerEstimate();
+    // GPU分配更新（监听用户手动修改）
+    document.querySelectorAll('.gpu-alloc-input').forEach(inp => {
+      inp.addEventListener('input', updateAllocStats);
+    });
+    updateAllocStats();
 
     document.getElementById('confirm-train').addEventListener('click', () => {
       const modelName = document.getElementById('train-name').value.trim() || ('Model-' + Game.state.day);
-      const gpuCount = parseInt(document.getElementById('train-gpu').value) || 0;
-      if (gpuCount <= 0) return;
+      // 收集GPU分配
+      const gpuAllocation = {};
+      let totalAlloc = 0;
+      document.querySelectorAll('.gpu-alloc-input').forEach(inp => {
+        const v = Math.max(0, parseInt(inp.value) || 0);
+        if (v > 0) {
+          gpuAllocation[inp.dataset.gpu] = v;
+          totalAlloc += v;
+        }
+      });
+      if (totalAlloc <= 0) {
+        UI.toast('请至少分配1张GPU用于训练');
+        return;
+      }
 
       Training.newTraining({
         modelName,
-        scale: selectedScale,
-        dataQuality: selectedQuality,
+        params: selectedParams,
         alignmentMethod: selectedAlign,
         selectedTechs,
-        gpuCount,
+        gpuAllocation,
         openSource: selectedOpen
       });
       UI.hideModal();
@@ -611,12 +1212,14 @@ const UI = {
     const s = Game.state;
     const r = s.researchers;
     let html = '<h2 class="text-lg font-bold text-accent mb-3">聘请研究员</h2>';
-    html += '<p class="text-xs text-muted mb-3">研究员提供训练效率加成，不同等级效果不同。每级最多5位。</p>';
+    html += '<p class="text-xs text-muted mb-3">研究员提供训练效率加成，不同等级效果不同。每级最多5位。每30天可聘请一次。</p>';
 
     for (const [key, tier] of Object.entries(CONFIG.RESEARCHER_TIERS)) {
       const count = r[key] || 0;
       const full = count >= CONFIG.RESEARCHER_MAX_PER_TIER;
-      html += '<div class="researcher-tier p-3 border border-border rounded mb-2 ' + (full ? 'opacity-50' : 'cursor-pointer hover:border-accent') + '" data-tier="' + key + '">' +
+      const locked = s.valuation < tier.unlockValuation;
+      const lockClass = locked ? 'opacity-50 cursor-not-allowed' : (full ? 'opacity-50' : 'cursor-pointer hover:border-accent');
+      html += '<div class="researcher-tier p-3 border border-border rounded mb-2 ' + lockClass + '" data-tier="' + key + '" data-locked="' + locked + '">' +
         '<div class="flex justify-between items-center">' +
         '<span class="font-bold text-sm">' + tier.name + '</span>' +
         '<span class="text-xs text-muted">' + count + '/' + CONFIG.RESEARCHER_MAX_PER_TIER + '</span>' +
@@ -626,6 +1229,7 @@ const UI = {
         '<span class="tag tag-green">训练效率 +' + (tier.effBonus * 100).toFixed(0) + '%</span>' +
         '<span class="text-muted ml-2">月薪 $' + Economy.formatMoney(tier.salary) + '</span>' +
         '</div>' +
+        (locked ? '<div class="text-xs text-danger mt-1">需市值 $' + Economy.formatMoney(tier.unlockValuation) + '</div>' : '') +
         '</div>';
     }
 
@@ -637,13 +1241,105 @@ const UI = {
   },
 
   bindHireResearcherEvents() {
-    document.querySelectorAll('.researcher-tier:not(.opacity-50)').forEach(el => {
+    document.querySelectorAll('.researcher-tier').forEach(el => {
+      if (el.dataset.locked === 'true') {
+        el.addEventListener('click', () => {
+          const tier = el.dataset.tier;
+          UI.toast(CONFIG.RESEARCHER_TIERS[tier].name + ' 需要市值 $' + Economy.formatMoney(CONFIG.RESEARCHER_TIERS[tier].unlockValuation) + ' 解锁');
+        });
+        return;
+      }
+      if (el.classList.contains('opacity-50')) return;
       el.addEventListener('click', () => {
         const tier = el.dataset.tier;
         Economy.hireResearcher(tier);
-        // 刷新模态框
         document.getElementById('modal-content').innerHTML = UI.buildHireResearcherModal();
         UI.bindHireResearcherEvents();
+      });
+    });
+  },
+
+  // === 研发技术模态框 ===
+  buildResearchModal() {
+    let html = '<h2 class="text-lg font-bold text-accent mb-3">研发技术</h2>';
+    const techStatus = Research.getTechStatus();
+    const tiers = { 1: [], 2: [], 3: [] };
+
+    for (const [key, tech] of Object.entries(techStatus)) {
+      const tier = tech.tier || 1;
+      if (!tiers[tier]) tiers[tier] = [];
+      tiers[tier].push({ key, ...tech });
+    }
+
+    for (let tier = 1; tier <= 3; tier++) {
+      html += '<div class="mb-3"><div class="text-xs text-muted uppercase mb-1">Tier ' + tier + '</div>';
+      html += '<div class="grid grid-cols-2 gap-1">';
+      for (const tech of tiers[tier]) {
+        const status = tech.status;
+        let badge = '';
+        let clickable = '';
+        let blockHtml = '';
+        if (status === 'unlocked') {
+          badge = '<span class="tag tag-green text-xs">已解锁</span>';
+        } else if (status === 'researching') {
+          badge = '<span class="tag tag-amber text-xs">研发中</span>';
+        } else if (status === 'available') {
+          badge = '<span class="tag text-xs border border-accent text-accent">可研发</span>';
+          clickable = 'research-tech-option cursor-pointer hover:border-accent';
+        } else {
+          // 根据 blockInfo 显示不同原因
+          if (tech.blockInfo) {
+            if (tech.blockInfo.type === 'queue') {
+              badge = '<span class="tag text-xs" style="border:1px solid #ffaa00;color:#ffaa00">队列已满</span>';
+              blockHtml = '<div class="text-xs mt-0.5" style="color:#ffaa00">' + tech.blockInfo.text + ' (聘请研究员可增加并发)</div>';
+            } else if (tech.blockInfo.type === 'deps') {
+              badge = '<span class="tag text-xs opacity-50">需前置</span>';
+              blockHtml = '<div class="text-xs text-danger mt-0.5">' + tech.blockInfo.text + '</div>';
+            } else {
+              badge = '<span class="tag text-xs opacity-50">不可研发</span>';
+            }
+          } else {
+            badge = '<span class="tag text-xs opacity-50">需前置</span>';
+          }
+        }
+        html += '<div class="' + clickable + ' p-2 border border-border rounded text-xs" data-tech="' + tech.key + '">' +
+          '<div class="flex justify-between items-center"><span class="font-bold">' + tech.name + '</span>' + badge + '</div>' +
+          '<div class="text-muted mt-0.5">' + tech.desc + '</div>' +
+          '<div class="text-muted mt-0.5">' + tech.effect + ' | ' + tech.days + '天 | $' + Economy.formatMoney(tech.cost) + '</div>' +
+          (tech.deps.length > 0 ? '<div class="text-muted text-xs">前置: ' + tech.deps.map(d => CONFIG.TECH_RESEARCH[d]?.name || d).join(', ') + '</div>' : '') +
+          blockHtml +
+          '</div>';
+      }
+      html += '</div></div>';
+    }
+
+    // 当前研发项目
+    const researching = Research.getResearchingList();
+    if (researching.length > 0) {
+      html += '<div class="mb-3"><div class="text-xs text-muted uppercase mb-1">研发进度</div>';
+      for (const r of researching) {
+        html += '<div class="mb-1"><div class="flex justify-between text-xs"><span>' + r.name + '</span><span class="font-mono">' + r.remaining + '天</span></div>' +
+          '<div class="progress-bar mt-0.5"><div class="progress-fill" style="width:' + r.progress + '%"></div></div>' +
+          '<button class="text-xs text-danger mt-0.5" onclick="Research.cancelResearch(\'' + r.key + '\'); UI.hideModal();">取消研发 (返还30%)</button>' +
+          '</div>';
+      }
+      html += '</div>';
+    }
+
+    html += '<div class="flex gap-2 justify-end mt-3">' +
+      '<button onclick="UI.hideModal()" class="modal-btn">关闭</button>' +
+      '</div>';
+
+    return html;
+  },
+
+  bindResearchEvents() {
+    document.querySelectorAll('.research-tech-option').forEach(el => {
+      el.addEventListener('click', () => {
+        const key = el.dataset.tech;
+        if (Research.startResearch(key)) {
+          UI.hideModal();
+        }
       });
     });
   },

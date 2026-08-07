@@ -31,6 +31,17 @@ const Events = {
         Game.addLog('罚款 $' + Economy.formatMoney(fine));
         break;
 
+      case 'power_fault':
+        const oldPower = s.powerCapacityMW;
+        s.powerCapacityMW *= (1 - event.value);
+        s.activeEffects.push({
+          name: event.name,
+          effect: 'power_fault_restore',
+          value: oldPower,
+          daysLeft: event.days
+        });
+        break;
+
       case 'eff_penalty':
         s.activeEffects.push({
           name: event.name,

@@ -2,11 +2,11 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Model Rush</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/three@0.148.0/build/three.min.js"></script>
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=13">
   <script>
     tailwind.config = {
       theme: {
@@ -31,6 +31,11 @@
     <div class="bg-panel border border-border rounded-xl p-8 w-96 text-center">
       <div class="text-accent text-2xl font-bold tracking-wider mb-2">Model Rush</div>
       <div class="text-muted text-sm mb-6">AI 大模型训练模拟器</div>
+      <div id="continue-section" class="mb-4 hidden">
+        <button id="continue-game-btn" class="modal-btn primary w-full py-2 mb-2">继续游戏</button>
+        <div class="text-xs text-muted" id="save-info"></div>
+        <div class="text-xs text-muted mt-2">或输入新公司名开始新游戏:</div>
+      </div>
       <div class="text-left mb-4">
         <label class="text-xs text-muted block mb-1">公司名称</label>
         <input id="company-name-input" type="text" class="modal-input" placeholder="输入你的AI公司名称..." maxlength="20" autofocus>
@@ -51,15 +56,15 @@
       <button onclick="Game.setSpeed(0)" id="btn-pause" class="speed-btn px-2 py-0.5 rounded border border-border hover:border-accent text-xs">暂停</button>
       <button onclick="Game.setSpeed(1)" id="btn-1x" class="speed-btn px-2 py-0.5 rounded border border-accent bg-accent/10 text-accent text-xs">1x</button>
       <button onclick="Game.setSpeed(2)" id="btn-2x" class="speed-btn px-2 py-0.5 rounded border border-border hover:border-accent text-xs">2x</button>
-      <button onclick="Game.setSpeed(5)" id="btn-5x" class="speed-btn px-2 py-0.5 rounded border border-border hover:border-accent text-xs">5x</button>
     </span>
   </div>
 
   <!-- 主体 -->
-  <div class="flex" style="height: calc(100vh - 96px);">
+  <div id="main-body" class="flex">
     <!-- 3D 场景 -->
     <div id="scene-container" class="flex-1 relative bg-[#0a0a0f]">
       <div id="scene-tooltip" class="absolute top-2 left-2 text-xs text-muted bg-panel/80 px-2 py-1 rounded pointer-events-none hidden"></div>
+      <button id="panel-toggle-btn" onclick="UI.toggleMobilePanel()">☰</button>
     </div>
 
     <!-- 拖拽调整手柄 -->
@@ -69,19 +74,24 @@
     <div id="right-panel" class="w-80 bg-panel border-l border-border overflow-y-auto flex flex-col text-xs" style="min-width:240px;max-width:500px;">
       <!-- 标签栏 -->
       <div id="panel-tabs" class="flex border-b border-border bg-[#111118] sticky top-0 z-10">
-        <button class="panel-tab active" data-tab="finance">财务</button>
+        <button class="panel-tab active" data-tab="finance">预览</button>
+        <button class="panel-tab" data-tab="products">产品</button>
         <button class="panel-tab" data-tab="training">训练</button>
-        <button class="panel-tab" data-tab="leaderboard">排行</button>
+        <button class="panel-tab" data-tab="research">研发</button>
         <button class="panel-tab" data-tab="inventory">库存</button>
         <button class="panel-tab" data-tab="log">日志</button>
       </div>
 
       <!-- 标签内容 -->
       <div id="tab-content" class="flex-1 overflow-y-auto p-3">
-        <!-- 财务标签 -->
+        <!-- 预览标签 -->
         <div class="tab-panel active" data-tab="finance">
           <div class="panel-card mb-2">
-            <div class="text-muted uppercase tracking-wider mb-1">财务概览</div>
+            <div class="text-muted uppercase tracking-wider mb-1">运营概览</div>
+            <div id="overview-summary" class="text-xs space-y-1"></div>
+          </div>
+          <div class="panel-card mb-2">
+            <div class="text-muted uppercase tracking-wider mb-1">财务</div>
             <div class="grid grid-cols-2 gap-1">
               <span class="text-muted">日收入</span><span id="panel-income" class="text-accent font-mono text-right">+$0</span>
               <span class="text-muted">日支出</span><span id="panel-expense" class="text-danger font-mono text-right">-$0</span>
@@ -100,6 +110,14 @@
           </div>
         </div>
 
+        <!-- 产品标签 -->
+        <div class="tab-panel" data-tab="products">
+          <div class="panel-card">
+            <div class="text-muted uppercase tracking-wider mb-1">已部署模型</div>
+            <div id="products-list" class="space-y-2"></div>
+          </div>
+        </div>
+
         <!-- 训练标签 -->
         <div class="tab-panel" data-tab="training">
           <div class="panel-card">
@@ -109,16 +127,28 @@
               <div class="flex justify-between text-xs"><span id="training-phase"></span><span id="training-pct"></span></div>
               <div class="progress-bar mt-1"><div id="training-bar" class="progress-fill" style="width:0%"></div></div>
               <div id="training-eta" class="text-muted mt-1"></div>
+              <div id="training-detail" class="hidden mt-2 grid grid-cols-2 gap-1 text-xs">
+                <span class="text-muted">子阶段</span><span id="train-sub-phase" class="font-mono text-right">--</span>
+                <span class="text-muted">Loss</span><span id="train-loss" class="font-mono text-right">--</span>
+                <span class="text-muted">GPU利用率</span><span id="train-gpu-util" class="font-mono text-right">--</span>
+                <span class="text-muted">稳定性</span><span id="train-stability" class="font-mono text-right">--</span>
+                <span class="text-muted">检查点</span><span id="train-checkpoints" class="font-mono text-right">0</span>
+                <span id="train-event" class="text-danger text-right hidden"></span>
+              </div>
               <button id="abandon-train-btn" class="action-btn danger-btn text-xs mt-2 hidden" onclick="Training.abandonTraining()">放弃训练</button>
             </div>
           </div>
         </div>
 
-        <!-- 排行榜标签 -->
-        <div class="tab-panel" data-tab="leaderboard">
+        <!-- 研发标签 -->
+        <div class="tab-panel" data-tab="research">
+          <div class="panel-card mb-2">
+            <div class="text-muted uppercase tracking-wider mb-1">研发进度</div>
+            <div id="research-progress" class="space-y-1"></div>
+          </div>
           <div class="panel-card">
-            <div class="text-muted uppercase tracking-wider mb-1">排行榜</div>
-            <div id="leaderboard" class="space-y-0.5"></div>
+            <div class="text-muted uppercase tracking-wider mb-1">已解锁技术</div>
+            <div id="unlocked-techs" class="space-y-0.5"></div>
           </div>
         </div>
 
@@ -142,15 +172,38 @@
   </div>
 
   <!-- 底部操作栏 -->
-  <div id="bottombar" class="h-12 bg-[#111118] border-t border-border flex items-center px-4 gap-3">
-    <button onclick="UI.showModal('buy-gpu')" class="action-btn">购买 GPU</button>
-    <button onclick="UI.showModal('demolish-gpu')" class="action-btn">拆除 GPU</button>
-    <button onclick="UI.showModal('expand-power')" class="action-btn">扩容供电</button>
-    <button onclick="UI.showModal('expand-cooling')" class="action-btn">扩容冷却</button>
-    <button onclick="Economy.expandDatacenter()" class="action-btn">扩容机房</button>
-    <button onclick="UI.showModal('hire-researcher')" class="action-btn">聘请研究员</button>
+  <div id="bottombar" class="h-12 bg-[#111118] border-t border-border flex items-center px-4 gap-2">
+    <!-- GPU 管理 -->
+    <div class="dropdown-group">
+      <button class="action-btn dropdown-toggle" onclick="UI.toggleDropdown(this)">GPU 管理</button>
+      <div class="dropdown-menu">
+        <button onclick="UI.showModal('buy-gpu');UI.closeDropdown()" class="dropdown-item">购买 GPU</button>
+        <button onclick="UI.showModal('demolish-gpu');UI.closeDropdown()" class="dropdown-item">拆除 GPU</button>
+      </div>
+    </div>
+    <!-- 基础设施 -->
+    <div class="dropdown-group">
+      <button class="action-btn dropdown-toggle" onclick="UI.toggleDropdown(this)">基础设施</button>
+      <div class="dropdown-menu">
+        <button onclick="UI.showModal('expand-power');UI.closeDropdown()" class="dropdown-item">扩容供电</button>
+        <button onclick="UI.showModal('expand-cooling');UI.closeDropdown()" class="dropdown-item">扩容冷却</button>
+        <button onclick="UI.showModal('expand-datacenter');UI.closeDropdown()" class="dropdown-item">扩容机房</button>
+      </div>
+    </div>
+    <!-- 团队 -->
+    <div class="dropdown-group">
+      <button class="action-btn dropdown-toggle" onclick="UI.toggleDropdown(this)">团队</button>
+      <div class="dropdown-menu">
+        <button onclick="UI.showModal('hire-researcher');UI.closeDropdown()" class="dropdown-item">聘请研究员</button>
+        <button onclick="UI.showModal('research');UI.closeDropdown()" class="dropdown-item">研发技术</button>
+      </div>
+    </div>
+    <button onclick="UI.showModal('collect-data')" class="action-btn">采集数据</button>
     <button onclick="UI.showModal('new-training')" class="action-btn">新建训练</button>
-    <button onclick="Economy.fundraise()" class="action-btn">发起融资</button>
+    <button onclick="Economy.fundraise()" class="action-btn" id="btn-fundraise">发起融资</button>
+    <span class="text-muted mx-1">|</span>
+    <button onclick="SaveSystem.save(false)" class="action-btn">保存游戏</button>
+    <button onclick="UI.showDeleteConfirm()" class="action-btn text-danger hover:border-danger">删除存档</button>
   </div>
 
   <!-- 模态框容器 -->
@@ -161,16 +214,18 @@
   <!-- Toast -->
   <div id="toast" class="hidden fixed top-16 right-4 bg-panel border border-accent rounded px-4 py-2 text-sm z-50 shadow-lg"></div>
 
-  <script src="js/config.js"></script>
-  <script src="js/game.js"></script>
-  <script src="js/economy.js"></script>
-  <script src="js/training.js"></script>
-  <script src="js/benchmark.js"></script>
-  <script src="js/competitor.js"></script>
-  <script src="js/events.js"></script>
-  <script src="js/scene.js"></script>
-  <script src="js/datacenter.js"></script>
-  <script src="js/ui.js"></script>
-  <script src="js/main.js"></script>
+  <script src="js/config.js?v=13"></script>
+  <script src="js/game.js?v=13"></script>
+  <script src="js/economy.js?v=12"></script>
+  <script src="js/training.js?v=12"></script>
+  <script src="js/benchmark.js?v=12"></script>
+  <script src="js/research.js?v=13"></script>
+  <script src="js/data.js?v=12"></script>
+  <script src="js/events.js?v=12"></script>
+  <script src="js/save.js?v=12"></script>
+  <script src="js/scene.js?v=13"></script>
+  <script src="js/datacenter.js?v=12"></script>
+  <script src="js/ui.js?v=13"></script>
+  <script src="js/main.js?v=12"></script>
 </body>
 </html>

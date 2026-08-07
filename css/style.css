@@ -174,6 +174,52 @@
 .rank-2 { color: #ccc; }
 .rank-3 { color: #cd7f32; }
 
+/* 下拉菜单 */
+.dropdown-group {
+  position: relative;
+}
+.dropdown-menu {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 4px;
+  background: #111118;
+  border: 1px solid #2a2a3a;
+  border-radius: 4px;
+  min-width: 140px;
+  z-index: 200;
+  overflow: hidden;
+  box-shadow: 0 -4px 12px rgba(0,0,0,0.5);
+}
+.dropdown-group.open .dropdown-menu {
+  display: block;
+}
+.dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  text-align: left;
+  font-size: 13px;
+  color: #ccc;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+.dropdown-item:hover {
+  background: rgba(0,255,136,0.08);
+  color: #00ff88;
+}
+.dropdown-item:not(:last-child) {
+  border-bottom: 1px solid #1a1a2e;
+}
+
+/* 底部操作栏 */
+#bottombar {
+  overflow: visible;
+}
+
 /* 锁定覆盖 */
 .locked-overlay { position: relative; }
 .locked-overlay::after {
@@ -188,4 +234,164 @@
   font-size: 11px;
   letter-spacing: 2px;
   border-radius: 6px;
+}
+
+/* 模型规模滑动条 */
+.scale-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  background: #1a1a2e;
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+.scale-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #00ff88;
+  border: 2px solid #0a0a0f;
+  cursor: pointer;
+  box-shadow: 0 0 6px rgba(0,255,136,0.5);
+  transition: transform 0.1s;
+}
+.scale-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+.scale-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #00ff88;
+  border: 2px solid #0a0a0f;
+  cursor: pointer;
+  box-shadow: 0 0 6px rgba(0,255,136,0.5);
+}
+
+/* === 移动端面板切换按钮 === */
+#panel-toggle-btn {
+  display: none;
+}
+
+/* === 主体flex布局 === */
+body { display: flex; flex-direction: column; }
+#main-body { flex: 1; min-height: 0; }
+
+/* === 移动端适配 === */
+@media (max-width: 768px) {
+  /* 顶部栏：缩小字体，隐藏部分信息 */
+  #topbar {
+    height: auto;
+    flex-wrap: wrap;
+    padding: 6px 8px;
+    gap: 4px 8px;
+    font-size: 11px;
+  }
+  #topbar > span { font-size: 11px; white-space: nowrap; }
+
+  /* 主体布局：面板变为覆盖层 */
+  #main-body {
+    position: relative;
+  }
+  #right-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 85% !important;
+    max-width: 320px !important;
+    z-index: 30;
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    box-shadow: -4px 0 16px rgba(0,0,0,0.5);
+  }
+  #right-panel.mobile-open {
+    transform: translateX(0);
+  }
+  #panel-resize-handle { display: none; }
+
+  /* 面板切换按钮 */
+  #panel-toggle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 31;
+    width: 36px;
+    height: 36px;
+    background: #111118;
+    border: 1px solid #2a2a3a;
+    border-radius: 6px;
+    color: #00ff88;
+    font-size: 18px;
+    cursor: pointer;
+  }
+
+  /* 底部操作栏：水平滚动 */
+  #bottombar {
+    height: auto !important;
+    min-height: 48px;
+    overflow-x: auto;
+    overflow-y: visible;
+    gap: 4px;
+    padding: 6px 8px;
+    -webkit-overflow-scrolling: touch;
+  }
+  #bottombar .action-btn {
+    padding: 6px 10px;
+    font-size: 12px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  #bottombar .dropdown-menu {
+    min-width: 120px;
+    /* 移动端bottombar横向滚动会裁剪absolute菜单，改用fixed居中弹出 */
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 54px;
+    width: max-content;
+    max-width: 90vw;
+    margin-bottom: 0;
+  }
+
+  /* 模态框：全宽 */
+  #modal-content {
+    max-width: 95vw !important;
+    max-height: 85vh !important;
+    padding: 12px !important;
+    font-size: 12px;
+  }
+  #modal-content .modal-input { font-size: 14px; }
+
+  /* 启动界面 */
+  #startup-overlay > div {
+    width: 90vw !important;
+    padding: 16px !important;
+  }
+
+  /* 面板标签字体缩小 */
+  .panel-tab { font-size: 11px; padding: 6px 2px; }
+
+  /* 滑动条触控区域加大 */
+  .scale-slider::-webkit-slider-thumb {
+    width: 24px;
+    height: 24px;
+  }
+  .scale-slider::-moz-range-thumb {
+    width: 24px;
+    height: 24px;
+  }
+}
+
+@media (max-width: 480px) {
+  #topbar { font-size: 10px; }
+  #topbar > span { font-size: 10px; }
+  .panel-tab { font-size: 10px; padding: 4px 1px; }
+  #bottombar .action-btn { padding: 5px 8px; font-size: 11px; }
 }

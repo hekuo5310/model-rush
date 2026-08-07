@@ -1,6 +1,6 @@
 // Model Rush - 模型训练系统
 const Training = {
-  // 当前训练任务: { phase, scale, dataQuality, alignmentMethod, selectedTechs, gpuAllocated, totalDays, elapsedDays, phaseElapsedDays, modelName, openSource }
+  // 当前训练任务: { phase, scale, dataQuality, alignmentMethod, selectedTechs, gpuAllocated, totalDays, elapsedDays, phaseElapsedDays, modelName, openSource, hparams, subPhase, subPhaseElapsedDays, checkpoints, trainingEventPenalty, interruptions, collapsed }
   newTraining(config) {
     const s = Game.state;
     if (s.activeTraining) {
@@ -8,23 +8,49 @@ const Training = {
       return false;
     }
 
-    const scale = CONFIG.MODEL_SCALES[config.scale];
-    const dataQuality = CONFIG.DATA_QUALITY[config.dataQuality];
-    const gpuCount = config.gpuCount;
-
-    if (gpuCount <= 0 || gpuCount > s.gpuTotal) {
-      UI.toast('GPU数量不足!');
+    // 检查数据采集
+    const dataStats = DataCollection.getStats();
+    if (dataStats.totalTokens < 10) {
+      UI.toast('数据不足! 请先采集至少10B tokens训练数据');
       return false;
     }
 
-    // 计算总训练FLOPs（使用对数避免溢出）
-    // 6 * params * tokens, 对于1T(1e12) * 20T(20e12) = 1.2e26，远超JS安全整数
-    const logFlops = Math.log10(6) + Math.log10(scale.params) + Math.log10(scale.tokens);
+    // 使用自由参数
+    const params = config.params || 70e9;
+    const tokens = params * CONFIG.CHINCHILLA_RATIO;
+    const gpuAllocation = config.gpuAllocation || {};
+    const gpuCount = Object.values(gpuAllocation).reduce((a, b) => a + b, 0);
+
+    // 验证GPU分配不超过可用量
+    const inferenceAlloc = Game.getInferenceGPUAllocation();
+    for (const [key, count] of Object.entries(gpuAllocation)) {
+      const owned = s.gpuInventory[key] || 0;
+      const used = inferenceAlloc[key] || 0;
+      if (count > owned - used) {
+        UI.toast(key + ' 可用数量不足');
+        return false;
+      }
+    }
+    if (gpuCount <= 0) {
+      UI.toast('请至少分配1张GPU');
+      return false;
+    }
+
+    // 验证所选技术已解锁
+    for (const techKey of (config.selectedTechs || [])) {
+      if (!Research.isUnlocked(techKey)) {
+        UI.toast('技术未解锁: ' + techKey);
+        return false;
+      }
+    }
+
+    // 计算总训练FLOPs = 6 * params * tokens
+    const logFlops = Math.log10(6) + Math.log10(params) + Math.log10(tokens);
 
     // 计算训练效率
     let efficiency = CONFIG.BASE_EFFICIENCY;
-    for (const techKey of config.selectedTechs) {
-      const tech = CONFIG.TECHNIQUES[techKey];
+    for (const techKey of (config.selectedTechs || [])) {
+      const tech = CONFIG.TECH_RESEARCH[techKey];
       if (tech && tech.effBonus) efficiency += tech.effBonus;
     }
     efficiency *= Game.getEffMultiplier();
@@ -32,12 +58,32 @@ const Training = {
     // 消耗 next_train_boost 效果
     Game.state.activeEffects = Game.state.activeEffects.filter(e => e.effect !== 'next_train_boost');
 
-    // 分配GPU的平均TFLOPS
-    const avgTFLOPS = Game.getTotalTFLOPS() / Math.max(1, s.gpuTotal);
-    const allocatedTFLOPS = avgTFLOPS * gpuCount;
+    // 计算分配GPU的总TFLOPS（按实际型号）
+    let allocatedTFLOPS = 0;
+    for (const [key, count] of Object.entries(gpuAllocation)) {
+      const gpu = CONFIG.GPUS[key];
+      if (gpu) allocatedTFLOPS += count * gpu.tflops;
+    }
 
-    // 训练天数（使用对数计算避免溢出）
-    // totalDays = totalFlops / (allocatedTFLOPS * 1e12 * efficiency * 86400)
+    // === 供电与冷却检查（训练启动后GPU从闲置升为满载） ===
+    const prevTraining = s.activeTraining;
+    s.activeTraining = { gpuAllocation: gpuAllocation }; // 临时按训练分配计算实际功耗
+    const projectedTotalPower = Game.getTotalPowerMW();
+    const projectedCoolingLoad = Game.getGPUActualPowerMW() * CONFIG.COOLING_RATIO;
+    s.activeTraining = prevTraining;
+
+    if (projectedTotalPower > s.powerCapacityMW) {
+      s.blackoutDays = 3;
+      Game.addLog('警告: 训练启动后功耗超载! 供电不足，开始断电!');
+      UI.toast('功耗超载! 断电3天!');
+    }
+    if (projectedCoolingLoad > s.coolingCapacityMW) {
+      efficiency *= 0.7; // 冷却不足：训练效率降低30%
+      Game.addLog('警告: 冷却不足! 训练效率降低30%');
+      UI.toast('冷却不足! 训练效率-30%');
+    }
+
+    // 训练天数
     const logDays = logFlops - (Math.log10(allocatedTFLOPS) + 12 + Math.log10(efficiency) + Math.log10(CONFIG.SECONDS_PER_DAY));
     const totalDays = Math.max(1, Math.ceil(Math.pow(10, logDays)));
 
@@ -47,14 +93,13 @@ const Training = {
 
     // 扣除训练费用
     let trainingCost = 0;
-    // 数据质量费用
-    if (dataQuality.cost) trainingCost += dataQuality.cost;
-    // 对齐方法费用
+    const effectiveQuality = DataCollection.getEffectiveQuality();
+    const dataQualityScoreMod = (effectiveQuality - 0.5) * 0.4;
+    const dataQuality = { name: '采集数据', scoreMod: dataQualityScoreMod, cost: 0 };
     if (config.alignmentMethod === 'rlhf') trainingCost += CONFIG.ALIGNMENT_METHODS.rlhf.cost;
     else if (config.alignmentMethod === 'dpo') trainingCost += CONFIG.ALIGNMENT_METHODS.dpo.cost;
-    // 技术费用
-    for (const techKey of config.selectedTechs) {
-      const tech = CONFIG.TECHNIQUES[techKey];
+    for (const techKey of (config.selectedTechs || [])) {
+      const tech = CONFIG.TECH_RESEARCH[techKey];
       if (tech && tech.cost) trainingCost += tech.cost;
     }
 
@@ -67,13 +112,25 @@ const Training = {
       Game.addLog('训练费用: $' + Economy.formatMoney(trainingCost));
     }
 
+    // 超参数
+    const hparams = {
+      learningRate: (config.hparams && config.hparams.learningRate !== undefined) ? config.hparams.learningRate : CONFIG.HYPERPARAMS.learningRate.default,
+      batchSize: (config.hparams && config.hparams.batchSize !== undefined) ? config.hparams.batchSize : CONFIG.HYPERPARAMS.batchSize.default,
+      seqLength: (config.hparams && config.hparams.seqLength !== undefined) ? config.hparams.seqLength : CONFIG.HYPERPARAMS.seqLength.default,
+      warmupSteps: (config.hparams && config.hparams.warmupSteps !== undefined) ? config.hparams.warmupSteps : CONFIG.HYPERPARAMS.warmupSteps.default
+    };
+
     s.activeTraining = {
       phase: 'pretraining',
-      scale: config.scale,
-      dataQuality: config.dataQuality,
+      params: params,
+      label: formatParams(params),
+      dataQuality: dataQuality,
+      dataQualityScoreMod: dataQualityScoreMod,
       alignmentMethod: config.alignmentMethod || 'dpo',
       selectedTechs: config.selectedTechs || [],
+      gpuAllocation: gpuAllocation,
       gpuAllocated: gpuCount,
+      allocatedTFLOPS: allocatedTFLOPS,
       totalDays: totalDays,
       pretrainingDays,
       sftDays,
@@ -82,15 +139,19 @@ const Training = {
       phaseElapsedDays: 0,
       modelName: config.modelName || ('Model-' + s.day),
       openSource: config.openSource || false,
+      hparams: hparams,
+      subPhase: 0,
+      subPhaseElapsedDays: 0,
+      checkpoints: [],
+      trainingEventPenalty: 0,
       interruptions: 0,
       collapsed: false
     };
 
-    Game.addLog('开始训练 ' + s.activeTraining.modelName + ' (' + scale.name + '), 预计 ' + totalDays + ' 天');
+    Game.addLog('开始训练 ' + s.activeTraining.modelName + ' (' + formatParams(params) + '), 预计 ' + totalDays + ' 天');
 
-    // 标记训练中GPU
-    Datacenter.markTrainingGPUs(gpuCount);
-
+    // 标记训练中GPU（按型号）
+    Datacenter.markTrainingGPUs(gpuAllocation);
     UI.update();
     return true;
   },
@@ -111,21 +172,110 @@ const Training = {
       return;
     }
 
+    // 训练事件惩罚（减缓当天进度）
+    if (t.trainingEventPenalty > 0) {
+      t.trainingEventPenalty = Math.max(0, t.trainingEventPenalty - 0.01);
+      return; // 事件惩罚导致当天无进展
+    }
+
     t.elapsedDays++;
     t.phaseElapsedDays++;
+    t.subPhaseElapsedDays++;
+
+    // 训练中突发事件（8%概率）
+    if (Math.random() < CONFIG.TRAINING_EVENT_CHANCE) {
+      const event = CONFIG.TRAINING_EVENTS[Math.floor(Math.random() * CONFIG.TRAINING_EVENTS.length)];
+      t.trainingEventPenalty += event.penalty;
+      Game.addLog('训练事件: ' + event.name + ' - ' + event.desc + ' (训练减速)');
+    }
+
+    // 保存检查点（每10%总天数）
+    const checkpointInterval = Math.max(1, Math.ceil(t.totalDays * 0.1));
+    if (t.elapsedDays > 0 && t.elapsedDays % checkpointInterval === 0) {
+      this.saveCheckpoint();
+    }
+
+    // 子阶段推进
+    this.advanceSubPhase(t);
 
     // 阶段切换
     if (t.phase === 'pretraining' && t.phaseElapsedDays >= t.pretrainingDays) {
       t.phase = 'sft';
       t.phaseElapsedDays = 0;
+      t.subPhase = 0;
+      t.subPhaseElapsedDays = 0;
       Game.addLog(t.modelName + ' 预训练阶段完成，进入SFT微调');
     } else if (t.phase === 'sft' && t.phaseElapsedDays >= t.sftDays) {
       t.phase = 'alignment';
       t.phaseElapsedDays = 0;
+      t.subPhase = 0;
+      t.subPhaseElapsedDays = 0;
       Game.addLog(t.modelName + ' SFT微调完成，进入对齐训练');
     } else if (t.phase === 'alignment' && t.phaseElapsedDays >= t.alignmentDays) {
       this.completeTraining();
     }
+  },
+
+  advanceSubPhase(t) {
+    const phaseConfig = CONFIG.TRAINING_PHASES[t.phase];
+    if (!phaseConfig || !phaseConfig.subPhases) return;
+    const subPhases = phaseConfig.subPhases;
+    if (t.subPhase >= subPhases.length) return;
+
+    const currentSub = subPhases[t.subPhase];
+
+    let phaseTotalDays;
+    if (t.phase === 'pretraining') phaseTotalDays = t.pretrainingDays;
+    else if (t.phase === 'sft') phaseTotalDays = t.sftDays;
+    else phaseTotalDays = t.alignmentDays;
+
+    const subPhaseTotalDays = Math.max(1, Math.ceil(phaseTotalDays * currentSub.pct));
+
+    if (t.subPhaseElapsedDays >= subPhaseTotalDays && t.subPhase < subPhases.length - 1) {
+      t.subPhase++;
+      t.subPhaseElapsedDays = 0;
+      Game.addLog(t.modelName + ' 进入子阶段: ' + subPhases[t.subPhase].name);
+    }
+  },
+
+  saveCheckpoint() {
+    const t = Game.state.activeTraining;
+    if (!t) return;
+    const cp = {
+      day: t.elapsedDays,
+      phase: t.phase,
+      phaseElapsedDays: t.phaseElapsedDays,
+      subPhase: t.subPhase,
+      subPhaseElapsedDays: t.subPhaseElapsedDays,
+      trainingEventPenalty: t.trainingEventPenalty,
+      interruptions: t.interruptions
+    };
+    t.checkpoints.push(cp);
+    Game.addLog('检查点已保存 (Day ' + t.elapsedDays + ')');
+  },
+
+  rollback() {
+    const t = Game.state.activeTraining;
+    if (!t) {
+      UI.toast('没有进行中的训练任务!');
+      return;
+    }
+    if (t.checkpoints.length === 0) {
+      UI.toast('没有可用的检查点!');
+      return;
+    }
+    const cp = t.checkpoints[t.checkpoints.length - 1];
+    t.checkpoints.pop();
+    t.elapsedDays = cp.day;
+    t.phase = cp.phase;
+    t.phaseElapsedDays = cp.phaseElapsedDays;
+    t.subPhase = cp.subPhase;
+    t.subPhaseElapsedDays = cp.subPhaseElapsedDays;
+    t.trainingEventPenalty = cp.trainingEventPenalty;
+    t.interruptions = cp.interruptions;
+    Game.addLog('已回滚到检查点 (Day ' + cp.day + ')');
+    UI.toast('已回滚到检查点 (Day ' + cp.day + ')');
+    UI.update();
   },
 
   update(dt) {
@@ -136,26 +286,28 @@ const Training = {
     const t = Game.state.activeTraining;
     Game.addLog(t.modelName + ' 训练完成!');
 
-    const score = Benchmark.evaluate(t);
+    const result = Benchmark.evaluate(t);
     const model = {
       name: t.modelName,
-      scale: CONFIG.MODEL_SCALES[t.scale].label,
-      score: score,
+      params: t.params,
+      label: t.label || formatParams(t.params),
+      score: result.overallScore,
+      benchmarkBreakdown: result.breakdown,
       openSource: t.openSource,
       techs: t.selectedTechs,
       rank: 0,
-      deployed: true
+      deployed: false, // 待用户选择部署GPU
+      deploymentGPUs: null
     };
 
-    Game.state.deployedModels.push(model);
     Game.state.completedModels.push(model);
 
-    // 更新排行榜
-    Benchmark.updateRankings();
-
     this.clearTraining();
-    Game.addLog(t.modelName + ' 综合得分: ' + score.toFixed(1) + (t.openSource ? ' [开源]' : ' [闭源]'));
-    UI.toast(t.modelName + ' 训练完成! 得分: ' + score.toFixed(1));
+    Game.addLog(t.modelName + ' 综合得分: ' + result.overallScore.toFixed(1) + (t.openSource ? ' [开源]' : ' [闭源]'));
+    UI.toast(t.modelName + ' 训练完成! 得分: ' + result.overallScore.toFixed(1));
+
+    // 弹出部署选择模态框
+    UI.showDeployModelModal(model);
     UI.update();
   },
 
@@ -192,6 +344,26 @@ const Training = {
     const overallProgress = Math.min(100, (t.elapsedDays / t.totalDays) * 100);
     const phaseProgress = Math.min(100, (t.phaseElapsedDays / Math.max(1, phaseTotalDays)) * 100);
 
+    // 获取当前子阶段信息
+    let subPhaseName = '';
+    let subPhaseProgress = 0;
+    if (phaseConfig && phaseConfig.subPhases && t.subPhase < phaseConfig.subPhases.length) {
+      const currentSub = phaseConfig.subPhases[t.subPhase];
+      subPhaseName = currentSub.name;
+      const subPhaseTotalDays = Math.max(1, Math.ceil(phaseTotalDays * currentSub.pct));
+      subPhaseProgress = Math.min(100, (t.subPhaseElapsedDays / subPhaseTotalDays) * 100);
+    }
+
+    // 模拟损失值（随训练进度下降）
+    const lossProgress = Math.min(1, overallProgress / 100);
+    const loss = 8.0 * Math.exp(-4.0 * lossProgress) + 1.5 + (Math.random() - 0.5) * 0.3;
+
+    // GPU利用率
+    const gpuUtilization = Math.min(100, (t.gpuAllocated / Math.max(1, Game.state.gpuTotal)) * 100 * (1 - t.trainingEventPenalty * 5));
+
+    // 训练稳定性（受中断和事件影响）
+    const stability = Math.max(0, 100 - t.interruptions * 20 - t.trainingEventPenalty * 200);
+
     return {
       phase: phaseConfig.name,
       overallProgress,
@@ -200,9 +372,18 @@ const Training = {
       totalDays: t.totalDays,
       remainingDays: t.totalDays - t.elapsedDays,
       modelName: t.modelName,
-      scale: CONFIG.MODEL_SCALES[t.scale].name,
+      scale: t.label || formatParams(t.params),
       interruptions: t.interruptions,
-      collapsed: t.collapsed
+      collapsed: t.collapsed,
+      subPhase: subPhaseName,
+      subPhaseProgress,
+      subPhaseIndex: t.subPhase,
+      loss,
+      gpuUtilization,
+      stability,
+      trainingEventPenalty: t.trainingEventPenalty,
+      hparams: t.hparams,
+      checkpoints: t.checkpoints.length
     };
   }
 };

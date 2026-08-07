@@ -17,6 +17,7 @@ const Datacenter = {
   COOLING_POS: { x: -8, z: -3 },
 
   init() {
+    this.updateFacilityPositions();
     this.createPowerRoom();
     this.createCoolingTower();
     this.createPipes();
@@ -26,6 +27,22 @@ const Datacenter = {
     const w = this.COLS * (this.RACK_SIZE + this.RACK_GAP) + 1.0;
     const d = this.ROWS * (this.RACK_SIZE + this.RACK_GAP) + 1.0;
     return { w, d };
+  },
+
+  // 根据平台尺寸计算设施位置，确保不重叠
+  updateFacilityPositions() {
+    const { w, d } = this.getPlatformSize();
+    // 设施放在平台左侧外部，留足间距避免碰撞
+    const offsetX = w / 2 + 3.5; // 供电房/冷却塔中心距平台左边缘 3.5
+    this.POWER_POS = { x: -offsetX, z: d / 2 + 3.0 };  // 左前方
+    this.COOLING_POS = { x: -offsetX, z: -(d / 2 + 3.0) }; // 左后方
+    // 移动已有设施
+    if (this.powerRoomGroup) {
+      this.powerRoomGroup.position.set(this.POWER_POS.x, 0, this.POWER_POS.z);
+    }
+    if (this.coolingGroup) {
+      this.coolingGroup.position.set(this.COOLING_POS.x, 0, this.COOLING_POS.z);
+    }
   },
 
   getPlatformBounds() {
@@ -181,6 +198,8 @@ const Datacenter = {
       }
     }
     this.createPlatform();
+    // 更新设施位置（避免扩建后碰撞）
+    this.updateFacilityPositions();
     this.updatePipes();
   },
 
@@ -442,7 +461,16 @@ const Datacenter = {
     this.ROWS += 2;
     this.COLS += 4;
     this.updatePlatform();
+    this.updateGround();
     Game.addLog('数据中心已扩容至 ' + this.ROWS + 'x' + this.COLS + ' (' + (this.ROWS * this.COLS) + ' 机架)');
+  },
+
+  updateGround() {
+    if (!this.groundMesh) return;
+    const { w, d } = this.getPlatformSize();
+    const groundSize = Math.max(w + 2, d + 2, 12);
+    this.groundMesh.geometry.dispose();
+    this.groundMesh.geometry = new THREE.PlaneGeometry(groundSize, groundSize);
   },
 
   updatePipes() {
@@ -456,9 +484,114 @@ const Datacenter = {
     this.createPipes();
   },
 
+  // 创建单个GPU机架（完整建模，每机架独立材质以支持单独训练脉冲）
+  createRack(gpuType) {
+    const gpu = CONFIG.GPUS[gpuType];
+    const color = gpu.color;
+    const s = this.RACK_SIZE;
+    const h = this.RACK_HEIGHT;
+
+    // 每机架独立材质（避免共享材质导致训练标记误伤同批所有GPU）
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.3, metalness: 0.9 });
+    const panelMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.5, metalness: 0.7 });
+    const gpuBladeMat = new THREE.MeshStandardMaterial({ color, roughness: 0.25, metalness: 0.6, emissive: color, emissiveIntensity: 0.08 });
+    const ventMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 1.0, metalness: 0.1 });
+    const ledMat = new THREE.MeshStandardMaterial({ color: 0x00ff88, emissive: 0x00ff88, emissiveIntensity: 0.8 });
+
+    // 共享几何体（节省内存）
+    const baseGeo = new THREE.BoxGeometry(s * 0.95, 0.03, s * 0.95);
+    const postGeo = new THREE.CylinderGeometry(0.012, 0.012, h, 6);
+    const sideGeo = new THREE.BoxGeometry(0.02, h * 0.85, s * 0.85);
+    const backGeo = new THREE.BoxGeometry(s * 0.85, h * 0.85, 0.02);
+    const bladeGeo = new THREE.BoxGeometry(s * 0.78, h * 0.15, s * 0.75);
+    const ventGeo = new THREE.BoxGeometry(s * 0.55, 0.006, 0.01);
+    const ledGeo = new THREE.SphereGeometry(0.015, 4, 4);
+    const topBeamGeo = new THREE.BoxGeometry(s * 0.9, 0.025, 0.04);
+    const topBeamZGeo = new THREE.BoxGeometry(0.04, 0.025, s * 0.9);
+    const topGeo = new THREE.BoxGeometry(s * 0.9, 0.02, s * 0.9);
+
+    const postRadius = 0.012;
+    const corners = [
+      [-s/2 + postRadius, 0, -s/2 + postRadius],
+      [s/2 - postRadius, 0, -s/2 + postRadius],
+      [-s/2 + postRadius, 0, s/2 - postRadius],
+      [s/2 - postRadius, 0, s/2 - postRadius]
+    ];
+    const bladeCount = 4;
+    const bladeGap = (h * 0.85) / bladeCount;
+    const bladeStartY = h * 0.12;
+
+    const rackGroup = new THREE.Group();
+    const bladeMeshes = [];
+
+    // 底座
+    const base = new THREE.Mesh(baseGeo, frameMat);
+    base.position.y = 0.015;
+    rackGroup.add(base);
+
+    // 四角立柱
+    for (const [cx, cy, cz] of corners) {
+      const post = new THREE.Mesh(postGeo, frameMat);
+      post.position.set(cx, h/2, cz);
+      rackGroup.add(post);
+    }
+
+    // 侧面板
+    const sideL = new THREE.Mesh(sideGeo, panelMat);
+    sideL.position.set(-s/2 + 0.01, h * 0.48, 0);
+    rackGroup.add(sideL);
+    const sideR = new THREE.Mesh(sideGeo, panelMat);
+    sideR.position.set(s/2 - 0.01, h * 0.48, 0);
+    rackGroup.add(sideR);
+
+    // 后面板
+    const back = new THREE.Mesh(backGeo, panelMat);
+    back.position.set(0, h * 0.48, -s/2 + 0.01);
+    rackGroup.add(back);
+
+    // GPU 刀片（4层）
+    for (let i = 0; i < bladeCount; i++) {
+      const by = bladeStartY + i * bladeGap;
+      const blade = new THREE.Mesh(bladeGeo, gpuBladeMat);
+      blade.position.set(0, by, 0);
+      rackGroup.add(blade);
+      bladeMeshes.push(blade);
+
+      // 通风槽
+      for (let v = 0; v < 3; v++) {
+        const vent = new THREE.Mesh(ventGeo, ventMat);
+        vent.position.set(0, by + (v - 1) * h * 0.033, s/2 - 0.005);
+        rackGroup.add(vent);
+      }
+
+      // 指示灯
+      const led = new THREE.Mesh(ledGeo, ledMat);
+      led.position.set(s * 0.30, by, s/2 + 0.01);
+      rackGroup.add(led);
+    }
+
+    // 顶部横梁
+    for (let zz = -1; zz <= 1; zz += 2) {
+      const beam = new THREE.Mesh(topBeamGeo, frameMat);
+      beam.position.set(0, h - 0.015, zz * s * 0.35);
+      rackGroup.add(beam);
+    }
+    for (let xx = -1; xx <= 1; xx += 2) {
+      const beam = new THREE.Mesh(topBeamZGeo, frameMat);
+      beam.position.set(xx * s * 0.35, h - 0.015, 0);
+      rackGroup.add(beam);
+    }
+
+    // 顶部面板
+    const topPanel = new THREE.Mesh(topGeo, panelMat);
+    topPanel.position.y = h - 0.01;
+    rackGroup.add(topPanel);
+
+    return { group: rackGroup, blades: bladeMeshes };
+  },
+
   addGPUs(gpuType, count) {
     const typeConfig = CONFIG.GPUS[gpuType];
-    const color = typeConfig.color;
     const maxCapacity = this.ROWS * this.COLS;
 
     // 已占用数量
@@ -467,147 +600,26 @@ const Datacenter = {
     const toAdd = Math.min(count, available);
 
     if (toAdd < count) {
-      // 超出容量，仅放下可放置的
       Game.addLog('警告: 数据中心仅能容纳 ' + maxCapacity + ' 个机架，超出部分无法放置');
     }
 
     let added = 0;
     for (let row = 0; row < this.ROWS && added < toAdd; row++) {
       for (let col = 0; col < this.COLS && added < toAdd; col++) {
-        const occupied = this.gpuBlocks.some(b => b.row === row && b.col === col);
-        if (occupied) continue;
-
-        // 碰撞检测：不与设施重叠
+        const occupiedPos = this.gpuBlocks.some(b => b.row === row && b.col === col);
+        if (occupiedPos) continue;
         if (this.isPositionBlocked(col, row)) continue;
 
         const x = this.getX(col);
         const z = this.getZ(row);
 
-        // 机架组
-        const rackGroup = new THREE.Group();
-        const s = this.RACK_SIZE;
-        const h = this.RACK_HEIGHT;
-
-        // 材料
-        const frameMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.3, metalness: 0.9 });
-        const panelMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.5, metalness: 0.7 });
-        const gpuBladeMat = new THREE.MeshStandardMaterial({
-          color: color,
-          roughness: 0.25,
-          metalness: 0.6,
-          emissive: color,
-          emissiveIntensity: 0.08
-        });
-
-        // 底座
-        const baseGeo = new THREE.BoxGeometry(s * 0.95, 0.03, s * 0.95);
-        const base = new THREE.Mesh(baseGeo, frameMat);
-        base.position.y = 0.015;
-        base.castShadow = true;
-        base.receiveShadow = true;
-        rackGroup.add(base);
-
-        // 四角立柱
-        const postRadius = 0.012;
-        const postGeo = new THREE.CylinderGeometry(postRadius, postRadius, h, 8);
-        const corners = [
-          [-s/2 + postRadius, 0, -s/2 + postRadius],
-          [s/2 - postRadius, 0, -s/2 + postRadius],
-          [-s/2 + postRadius, 0, s/2 - postRadius],
-          [s/2 - postRadius, 0, s/2 - postRadius]
-        ];
-        for (const [cx, cy, cz] of corners) {
-          const post = new THREE.Mesh(postGeo, frameMat);
-          post.position.set(cx, h/2, cz);
-          post.castShadow = true;
-          rackGroup.add(post);
-        }
-
-        // 侧面板（左右）
-        const sideGeo = new THREE.BoxGeometry(0.02, h * 0.85, s * 0.85);
-        const sideL = new THREE.Mesh(sideGeo, panelMat);
-        sideL.position.set(-s/2 + 0.01, h * 0.48, 0);
-        sideL.receiveShadow = true;
-        rackGroup.add(sideL);
-        const sideR = new THREE.Mesh(sideGeo, panelMat);
-        sideR.position.set(s/2 - 0.01, h * 0.48, 0);
-        sideR.receiveShadow = true;
-        rackGroup.add(sideR);
-
-        // 后面板
-        const backGeo = new THREE.BoxGeometry(s * 0.85, h * 0.85, 0.02);
-        const back = new THREE.Mesh(backGeo, panelMat);
-        back.position.set(0, h * 0.48, -s/2 + 0.01);
-        back.receiveShadow = true;
-        rackGroup.add(back);
-
-        // GPU 刀片单元（4层）
-        const bladeCount = 4;
-        const bladeH = h * 0.15;
-        const bladeD = s * 0.75;
-        const bladeW = s * 0.78;
-        const bladeGap = (h * 0.85) / bladeCount;
-        const bladeStartY = h * 0.12;
-        const bladeMeshes = [];
-
-        for (let i = 0; i < bladeCount; i++) {
-          const by = bladeStartY + i * bladeGap;
-
-          // 刀片主体
-          const bladeGeo = new THREE.BoxGeometry(bladeW, bladeH, bladeD);
-          const blade = new THREE.Mesh(bladeGeo, gpuBladeMat);
-          blade.position.set(0, by, 0);
-          blade.castShadow = true;
-          blade.receiveShadow = true;
-          rackGroup.add(blade);
-          bladeMeshes.push(blade);
-
-          // 前面板通风槽
-          for (let v = 0; v < 3; v++) {
-            const ventGeo = new THREE.BoxGeometry(bladeW * 0.7, 0.006, 0.01);
-            const ventMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 1.0, metalness: 0.1 });
-            const vent = new THREE.Mesh(ventGeo, ventMat);
-            vent.position.set(0, by + (v - 1) * bladeH * 0.22, s/2 - 0.005);
-            rackGroup.add(vent);
-          }
-
-          // 指示灯
-          const ledGeo = new THREE.SphereGeometry(0.015, 4, 4);
-          const ledMat = new THREE.MeshStandardMaterial({ color: 0x00ff88, emissive: 0x00ff88, emissiveIntensity: 0.8 });
-          const led = new THREE.Mesh(ledGeo, ledMat);
-          led.position.set(bladeW * 0.35, by, s/2 + 0.01);
-          rackGroup.add(led);
-        }
-
-        // 顶部横梁
-        const topBeamGeo = new THREE.BoxGeometry(s * 0.9, 0.025, 0.04);
-        for (let zz = -1; zz <= 1; zz += 2) {
-          const beam = new THREE.Mesh(topBeamGeo, frameMat);
-          beam.position.set(0, h - 0.015, zz * s * 0.35);
-          beam.castShadow = true;
-          rackGroup.add(beam);
-        }
-        const topBeamZ = new THREE.BoxGeometry(0.04, 0.025, s * 0.9);
-        for (let xx = -1; xx <= 1; xx += 2) {
-          const beam = new THREE.Mesh(topBeamZ, frameMat);
-          beam.position.set(xx * s * 0.35, h - 0.015, 0);
-          beam.castShadow = true;
-          rackGroup.add(beam);
-        }
-
-        // 顶部面板
-        const topGeo = new THREE.BoxGeometry(s * 0.9, 0.02, s * 0.9);
-        const topPanel = new THREE.Mesh(topGeo, panelMat);
-        topPanel.position.y = h - 0.01;
-        topPanel.castShadow = true;
-        rackGroup.add(topPanel);
-
-        rackGroup.position.set(x, 0, z);
-        Scene.scene.add(rackGroup);
+        const rack = this.createRack(gpuType);
+        rack.group.position.set(x, 0, z);
+        Scene.scene.add(rack.group);
 
         this.gpuBlocks.push({
-          blades: bladeMeshes,
-          group: rackGroup,
+          blades: rack.blades,
+          group: rack.group,
           type: gpuType,
           row,
           col,
@@ -638,15 +650,32 @@ const Datacenter = {
     this.gpuBlocks = this.gpuBlocks.filter(b => !toRemove.includes(b));
   },
 
-  markTrainingGPUs(count) {
-    let marked = 0;
+  markTrainingGPUs(allocation) {
+    // allocation 可以是对象 {H100: 8, A100: 4} 或数字（兼容旧调用）
+    const allocObj = typeof allocation === 'object' ? allocation : null;
+    const allocCount = typeof allocation === 'number' ? allocation : 0;
+    const remaining = allocObj ? { ...allocObj } : null;
+
     for (const block of this.gpuBlocks) {
-      if (!block.training && marked < count) {
-        block.training = true;
-        for (const blade of block.blades) {
-          blade.material.emissiveIntensity = 0.5;
+      if (block.training) continue;
+      if (allocObj) {
+        // 按型号分配
+        if (remaining[block.type] && remaining[block.type] > 0) {
+          block.training = true;
+          remaining[block.type]--;
+          for (const blade of block.blades) {
+            blade.material.emissiveIntensity = 0.5;
+          }
         }
-        marked++;
+      } else {
+        // 按数量分配（兼容旧调用）
+        if (allocCount > 0) {
+          block.training = true;
+          allocCount--;
+          for (const blade of block.blades) {
+            blade.material.emissiveIntensity = 0.5;
+          }
+        }
       }
     }
   },
@@ -686,5 +715,34 @@ const Datacenter = {
 
   getZ(row) {
     return (row - this.ROWS / 2 + 0.5) * (this.RACK_SIZE + this.RACK_GAP);
+  },
+
+  // 从存档重建GPU方块（加载存档时使用）
+  rebuildGPUBlocks(blockData) {
+    // 清除现有GPU
+    for (const block of this.gpuBlocks) {
+      Scene.scene.remove(block.group);
+    }
+    this.gpuBlocks = [];
+    // 重建
+    for (const bd of blockData) {
+      this.addOneGPUBlock(bd.type, bd.row, bd.col, bd.training);
+    }
+  },
+
+  // 添加单个GPU方块（不更新库存，用于存档恢复，使用与正常购买一致的完整建模）
+  addOneGPUBlock(gpuType, row, col, training) {
+    const x = this.getX(col);
+    const z = this.getZ(row);
+
+    const rack = this.createRack(gpuType);
+    rack.group.position.set(x, 0, z);
+    if (training) {
+      for (const blade of rack.blades) {
+        blade.material.emissiveIntensity = 0.5;
+      }
+    }
+    Scene.scene.add(rack.group);
+    this.gpuBlocks.push({ group: rack.group, blades: rack.blades, type: gpuType, row, col, training });
   }
 };

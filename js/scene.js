@@ -22,7 +22,8 @@ const Scene = {
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0a0a0f);
-    this.scene.fog = new THREE.Fog(0x0a0a0f, 30, 80);
+    // 雾距加大到覆盖最大缩放半径(60)，避免缩放/缩窗后场景被雾吞掉而变昏暗
+    this.scene.fog = new THREE.Fog(0x0a0a0f, 16, 62);
 
     this.camera = new THREE.PerspectiveCamera(45, w / h, 0.5, 200);
     this.updateCameraPosition();
@@ -32,6 +33,7 @@ const Scene = {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.domElement.style.touchAction = 'none'; // 移动端手势由JS处理
     this.container.appendChild(this.renderer.domElement);
 
     this.setupLights();
@@ -129,7 +131,7 @@ const Scene = {
       content = '供电房 | 容量: ' + s.powerCapacityMW + 'MW | 当前负载: ' + Game.getTotalPowerMW().toFixed(1) + 'MW';
     } else if (data.type === 'coolingTower') {
       const s = Game.state;
-      const coolingLoad = Game.getGPUPowerMW() * CONFIG.COOLING_RATIO;
+      const coolingLoad = Game.getGPUActualPowerMW() * CONFIG.COOLING_RATIO;
       content = '冷却塔 | 容量: ' + s.coolingCapacityMW + 'MW | 热负荷: ' + coolingLoad.toFixed(1) + 'MW';
     } else {
       const gpu = CONFIG.GPUS[data.type];
@@ -192,6 +194,51 @@ const Scene = {
     });
 
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    // === 移动端触摸控制 ===
+    let touchStart = null;
+    let pinchDist = 0;
+    canvas.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        this.isDragging = true;
+        this.dragStarted = false;
+      } else if (e.touches.length === 2) {
+        pinchDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        touchStart = null;
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      if (e.touches.length === 1 && touchStart) {
+        const dx = e.touches[0].clientX - touchStart.x;
+        const dy = e.touches[0].clientY - touchStart.y;
+        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) this.dragStarted = true;
+        touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        this.spherical.theta -= dx * 0.005;
+        this.spherical.phi -= dy * 0.005;
+        this.spherical.phi = Math.max(0.2, Math.min(Math.PI / 2 - 0.05, this.spherical.phi));
+        this.updateCameraPosition();
+      } else if (e.touches.length === 2 && pinchDist > 0) {
+        const d = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        this.spherical.radius *= (pinchDist / Math.max(1, d));
+        this.spherical.radius = Math.max(5, Math.min(60, this.spherical.radius));
+        pinchDist = d;
+        this.updateCameraPosition();
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', () => {
+      this.isDragging = false;
+      setTimeout(() => { this.dragStarted = false; }, 50);
+    });
   },
 
   updateCameraPosition() {
@@ -227,8 +274,10 @@ const Scene = {
   },
 
   setupGrid() {
-    // 大地基（室外地面）
-    const groundGeo = new THREE.PlaneGeometry(40, 40);
+    // 地基（紧贴平台，不无限延伸）
+    const { w, d } = Datacenter.getPlatformSize();
+    const groundSize = Math.max(w + 2, d + 2, 12);
+    const groundGeo = new THREE.PlaneGeometry(groundSize, groundSize);
     const groundMat = new THREE.MeshStandardMaterial({ color: 0x111118, roughness: 0.9, metalness: 0.1 });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
