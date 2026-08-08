@@ -15,7 +15,10 @@ const Benchmark = {
     rope:            { long_context: 0.04, multilingual: 0.02 },
     ring_attention:  { long_context: 0.05 },
     rlaif:           { safety: 0.04 },
-    data_dedup:      { comprehension: 0.02, multilingual: 0.02 }
+    data_dedup:      { comprehension: 0.02, multilingual: 0.02 },
+    tokenizer_opt:   { comprehension: 0.03, multilingual: 0.05 },
+    synthetic_curriculum: { reasoning: 0.06, coding: 0.02 },
+    fsdp2:           { reasoning: 0.01, coding: 0.01 }
   },
 
   evaluate(training) {
