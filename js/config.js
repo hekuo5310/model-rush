@@ -96,6 +96,13 @@ const CONFIG = {
   },
 
   // 技术研发树（按依赖关系分层，覆盖训练全流程）
+  // 研发等级：完成指定数量的技术后自动晋级，限制更高阶技术的立项。
+  RESEARCH_LEVELS: {
+    1: { name: '探索级', requiredCompleted: 0, desc: '可研发基础技术' },
+    2: { name: '工程级', requiredCompleted: 3, desc: '可研发进阶技术' },
+    3: { name: '架构级', requiredCompleted: 8, desc: '可研发高级技术' },
+    4: { name: '前沿级', requiredCompleted: 15, desc: '可研发前沿技术' }
+  },
   TECH_RESEARCH: {
     // Tier 1 - 基础技术（无需前置，新手友好）
     flash_attention: { name: 'Flash Attention', desc: '让GPU算得更快，每次只算一小块注意力，省显存', tier: 1, deps: [], days: 30, cost: 5_000_000, effect: '训练效率+20%', effBonus: 0.20 },
@@ -124,6 +131,14 @@ const CONFIG = {
     constitutional:  { name: 'Constitutional AI', desc: '用规则约束模型行为，让它更安全', tier: 3, deps: ['distillation'], days: 40, cost: 8_000_000, effect: '安全性+10%', qualityMod: 0.01 },
     qat:             { name: '量化感知训练', desc: '训练时模拟低精度，推理时速度更快', tier: 3, deps: ['mixed_precision'], days: 50, cost: 10_000_000, effect: '推理效率+50%，质量+1%', qualityMod: 0.01 },
     speculative:     { name: '推测解码', desc: '小模型快速生成草稿，大模型验证，API收入翻倍', tier: 3, deps: ['distillation'], days: 60, cost: 15_000_000, effect: '推理速度+100%，API收入+50%', incomeBonus: 0.50 }
+    ,
+    // Tier 4 - 前沿技术
+    fp8_training:    { name: 'FP8 训练', desc: '用更低精度完成大部分计算，在控制误差的同时提升吞吐', tier: 4, deps: ['mixed_precision', 'parallel3d'], days: 75, cost: 35_000_000, effect: '训练效率+22%', effBonus: 0.22 },
+    fsdp2:            { name: 'FSDP2 分片并行', desc: '更细粒度地切分参数、梯度与优化器状态，扩大可训练模型规模', tier: 4, deps: ['zero3', 'grad_checkpoint'], days: 80, cost: 40_000_000, effect: '训练效率+18%，质量+1%', effBonus: 0.18, qualityMod: 0.01 },
+    tokenizer_opt:    { name: '领域 Tokenizer', desc: '针对训练语料重建分词器，减少碎片词并提升多语言表达', tier: 4, deps: ['rope', 'data_dedup'], days: 55, cost: 25_000_000, effect: '多语言与理解质量+3%', qualityMod: 0.02 },
+    synthetic_curriculum: { name: '合成课程数据', desc: '用自动验证的合成题目构建由浅入深的推理训练集', tier: 4, deps: ['curriculum', 'rlaif'], days: 85, cost: 45_000_000, effect: '推理质量+4%', qualityMod: 0.03 },
+    continuous_batching: { name: '连续批处理', desc: '动态合并不同请求，减少推理GPU等待时间', tier: 4, deps: ['kv_cache', 'speculative'], days: 65, cost: 30_000_000, effect: '推理收入+30%', incomeBonus: 0.30 },
+    open_source_ecosystem: { name: '开源生态运营', desc: '建立托管、插件与企业支持渠道，让开源模型也能持续变现', tier: 4, deps: ['distillation', 'constitutional'], days: 70, cost: 32_000_000, effect: '开源模型收入+50%', openSourceIncomeBonus: 0.50 }
   },
 
   // 研究员
@@ -149,6 +164,8 @@ const CONFIG = {
   API_PRICE_PER_TOKEN: { small: 1e-6, medium: 3e-6, large: 6e-6, frontier: 1e-5 },
   DAILY_ACTIVE_USERS: { small: 20_000_000, medium: 150_000_000, large: 500_000_000, frontier: 2_000_000_000 },
   AVG_DAILY_TOKENS: 5000,
+  // 开源模型可通过托管 API、支持服务获得收入，但低于同等闭源模型。
+  OPEN_SOURCE_INCOME_MULTIPLIER: 0.35,
 
   // 融资
   FUNDRAISE_COOLDOWN_DAYS: 180,
@@ -243,4 +260,10 @@ function effectiveInferenceGPUs(deploymentGPUs) {
     total += count * g.tflops / baseTflops;
   }
   return total;
+}
+
+// 单张指定型号 GPU 可替代多少张 H100（用于混合部署的“汇率”）。
+function gpuToH100Rate(gpuKey) {
+  const gpu = CONFIG.GPUS[gpuKey];
+  return gpu ? gpu.tflops / CONFIG.GPUS.H100.tflops : 0;
 }
