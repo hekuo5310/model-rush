@@ -6,7 +6,7 @@ const SaveSystem = {
   save(silent) {
     const s = Game.state;
     const data = {
-      version: 1,
+      version: 2,
       timestamp: Date.now(),
       companyName: s.companyName,
       gameState: {
@@ -19,6 +19,7 @@ const SaveSystem = {
         powerCapacityMW: s.powerCapacityMW,
         coolingCapacityMW: s.coolingCapacityMW,
         activeTraining: s.activeTraining ? { ...s.activeTraining } : null,
+        activeTrainings: Game.getActiveTrainings().map(t => ({ ...t })),
         deployedModels: s.deployedModels,
         completedModels: s.completedModels,
         dailyIncome: s.dailyIncome,
@@ -111,14 +112,14 @@ const SaveSystem = {
     s.gpuTotal = gs.gpuTotal || 0;
     s.powerCapacityMW = gs.powerCapacityMW !== undefined ? gs.powerCapacityMW : CONFIG.INITIAL_POWER_CAPACITY_MW;
     s.coolingCapacityMW = gs.coolingCapacityMW !== undefined ? gs.coolingCapacityMW : CONFIG.INITIAL_COOLING_CAPACITY_MW;
-    s.activeTraining = gs.activeTraining;
+    s.activeTrainings = Array.isArray(gs.activeTrainings) ? gs.activeTrainings : (gs.activeTraining ? [gs.activeTraining] : []);
+    Game.syncPrimaryTraining();
     s.deployedModels = gs.deployedModels || [];
     s.completedModels = gs.completedModels || [];
 
     // === 存档迁移：旧格式兼容 ===
     // 迁移训练任务
-    if (s.activeTraining) {
-      const t = s.activeTraining;
+    for (const t of Game.getActiveTrainings()) {
       if (!t.params && t.scale) {
         const sc = CONFIG.MODEL_SCALES[t.scale];
         if (sc) {
@@ -130,7 +131,10 @@ const SaveSystem = {
         // 旧存档只有数量，无型号分配；用一个占位分配
         t.gpuAllocation = { _legacy: t.gpuAllocated };
       }
+      if (!t.id) t.id = 'train_restore_' + s.day + '_' + Math.random().toString(36).slice(2);
+      if (t.paused === undefined) t.paused = false;
     }
+    Game.syncPrimaryTraining();
     // 迁移已部署模型
     for (const model of s.deployedModels) {
       if (!model.params && model.scale) {
@@ -199,6 +203,8 @@ const SaveSystem = {
     }
 
     // 重置运行状态
+    Datacenter.unmarkTrainingGPUs();
+    if (Game.getActiveTrainings().length > 0) Datacenter.markTrainingGPUs(Game.getTrainingGPUAllocation());
     s.elapsed = 0;
     s.lastFrame = performance.now();
     s.running = true;
@@ -252,6 +258,7 @@ const SaveSystem = {
     s.powerCapacityMW = CONFIG.INITIAL_POWER_CAPACITY_MW;
     s.coolingCapacityMW = CONFIG.INITIAL_COOLING_CAPACITY_MW;
     s.activeTraining = null;
+    s.activeTrainings = [];
     s.deployedModels = [];
     s.completedModels = [];
     s.dailyIncome = 0;
