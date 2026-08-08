@@ -1,9 +1,52 @@
 // Model Rush - 存档系统（LocalStorage）
 const SaveSystem = {
-  SAVE_KEY: 'model_rush_save',
+  LEGACY_SAVE_KEY: 'model_rush_save',
+  SLOTS_KEY: 'model_rush_save_slots',
+  LAST_SLOT_KEY: 'model_rush_last_slot',
+  currentSlotId: null,
+
+  slotKey(id) { return 'model_rush_save_slot_' + id; },
+
+  // 旧版单存档自动迁移，保证已有进度不会丢失。
+  migrateLegacySave() {
+    const existing = JSON.parse(localStorage.getItem(this.SLOTS_KEY) || '[]');
+    if (existing.length > 0 || !localStorage.getItem(this.LEGACY_SAVE_KEY)) return existing;
+    try {
+      const data = JSON.parse(localStorage.getItem(this.LEGACY_SAVE_KEY));
+      if (!data || !data.gameState) return existing;
+      const id = 'legacy_' + Date.now();
+      const slot = { id, name: (data.companyName || '旧存档') + ' · 旧存档', companyName: data.companyName || '旧存档', day: data.gameState.day || 1, cash: data.gameState.cash || 0, timestamp: data.timestamp || Date.now() };
+      localStorage.setItem(this.slotKey(id), JSON.stringify(data));
+      localStorage.setItem(this.SLOTS_KEY, JSON.stringify([slot]));
+      localStorage.setItem(this.LAST_SLOT_KEY, id);
+      return [slot];
+    } catch (e) { return existing; }
+  },
+
+  getSlots() {
+    try {
+      const slots = this.migrateLegacySave();
+      return slots.filter(slot => localStorage.getItem(this.slotKey(slot.id))).sort((a, b) => b.timestamp - a.timestamp);
+    } catch (e) { return []; }
+  },
+
+  updateSlotMeta(id, data, name) {
+    const slots = this.getSlots();
+    const old = slots.find(slot => slot.id === id);
+    const meta = { id, name: name || old?.name || data.companyName || '未命名存档', companyName: data.companyName || '', day: data.gameState.day || 1, cash: data.gameState.cash || 0, timestamp: data.timestamp };
+    const next = [meta, ...slots.filter(slot => slot.id !== id)];
+    localStorage.setItem(this.SLOTS_KEY, JSON.stringify(next));
+  },
+
+  createSlot(name) {
+    const id = 'slot_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+    this.currentSlotId = id;
+    this.save(true, id, name || (Game.state.companyName + ' · 存档'));
+    return id;
+  },
 
   // 保存游戏（silent=true 用于自动存档，显示提示）
-  save(silent) {
+  save(silent, slotId = this.currentSlotId, slotName) {
     const s = Game.state;
     const data = {
       version: 2,
@@ -50,7 +93,11 @@ const SaveSystem = {
       }
     };
     try {
-      localStorage.setItem(this.SAVE_KEY, JSON.stringify(data));
+      if (!slotId) slotId = this.createSlot(slotName || (s.companyName + ' · 存档'));
+      this.currentSlotId = slotId;
+      localStorage.setItem(this.slotKey(slotId), JSON.stringify(data));
+      this.updateSlotMeta(slotId, data, slotName);
+      localStorage.setItem(this.LAST_SLOT_KEY, slotId);
       if (silent) {
         // 自动存档不弹toast，仅记日志
         Game.addLog('自动存档已保存');
@@ -66,9 +113,11 @@ const SaveSystem = {
   },
 
   // 加载游戏
-  load() {
+  load(slotId) {
     try {
-      const raw = localStorage.getItem(this.SAVE_KEY);
+      const slots = this.getSlots();
+      const target = slotId || localStorage.getItem(this.LAST_SLOT_KEY) || slots[0]?.id;
+      const raw = target ? localStorage.getItem(this.slotKey(target)) : null;
       if (!raw) {
         UI.toast('没有找到存档');
         return false;
@@ -78,6 +127,8 @@ const SaveSystem = {
         UI.toast('存档格式无效');
         return false;
       }
+      this.currentSlotId = target;
+      localStorage.setItem(this.LAST_SLOT_KEY, target);
       return this.restore(data);
     } catch (e) {
       UI.toast('加载失败: ' + e.message);
@@ -218,10 +269,18 @@ const SaveSystem = {
   },
 
   // 删除存档并重置游戏
-  delete() {
+  delete(slotId = this.currentSlotId) {
     try {
-      localStorage.removeItem(this.SAVE_KEY);
-      this.resetGame();
+      if (!slotId) return false;
+      localStorage.removeItem(this.slotKey(slotId));
+      const slots = this.getSlots().filter(slot => slot.id !== slotId);
+      localStorage.setItem(this.SLOTS_KEY, JSON.stringify(slots));
+      if (localStorage.getItem(this.LAST_SLOT_KEY) === slotId) localStorage.removeItem(this.LAST_SLOT_KEY);
+      const deletingCurrent = slotId === this.currentSlotId;
+      if (deletingCurrent) {
+        this.currentSlotId = null;
+        this.resetGame();
+      }
       return true;
     } catch (e) {
       UI.toast('删除失败');
@@ -297,13 +356,13 @@ const SaveSystem = {
 
   // 是否有存档
   hasSave() {
-    return localStorage.getItem(this.SAVE_KEY) !== null;
+    return this.getSlots().length > 0;
   },
 
   // 获取存档信息
-  getSaveInfo() {
+  getSaveInfo(slotId = this.currentSlotId) {
     try {
-      const raw = localStorage.getItem(this.SAVE_KEY);
+      const raw = slotId ? localStorage.getItem(this.slotKey(slotId)) : null;
       if (!raw) return null;
       const data = JSON.parse(raw);
       return {
