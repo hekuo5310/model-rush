@@ -301,8 +301,8 @@ const Economy = {
     }
     s.cash -= cost;
     s.datacenterExpands++;
-    Datacenter.expand();
-    Game.addLog('数据中心扩容 (Lv.' + s.datacenterExpands + '), 花费 $' + Economy.formatMoney(cost));
+    const expansion = Datacenter.expand();
+    Game.addLog('数据中心扩容 Lv.' + s.datacenterExpands + '：新增 ' + expansion.addedSlots + ' 个 GPU 位，花费 $' + Economy.formatMoney(cost));
     UI.update();
     return true;
   }
