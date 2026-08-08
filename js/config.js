@@ -138,7 +138,15 @@ const CONFIG = {
     tokenizer_opt:    { name: '领域 Tokenizer', desc: '针对训练语料重建分词器，减少碎片词并提升多语言表达', tier: 4, deps: ['rope', 'data_dedup'], days: 55, cost: 25_000_000, effect: '多语言与理解质量+3%', qualityMod: 0.02 },
     synthetic_curriculum: { name: '合成课程数据', desc: '用自动验证的合成题目构建由浅入深的推理训练集', tier: 4, deps: ['curriculum', 'rlaif'], days: 85, cost: 45_000_000, effect: '推理质量+4%', qualityMod: 0.03 },
     continuous_batching: { name: '连续批处理', desc: '动态合并不同请求，减少推理GPU等待时间', tier: 4, deps: ['kv_cache', 'speculative'], days: 65, cost: 30_000_000, effect: '推理收入+30%', incomeBonus: 0.30 },
-    open_source_ecosystem: { name: '开源生态运营', desc: '建立托管、插件与企业支持渠道，让开源模型也能持续变现', tier: 4, deps: ['distillation', 'constitutional'], days: 70, cost: 32_000_000, effect: '开源模型收入+50%', openSourceIncomeBonus: 0.50 }
+    open_source_ecosystem: { name: '开源生态运营', desc: '建立托管、插件与企业支持渠道，让开源模型也能持续变现', tier: 4, deps: ['distillation', 'constitutional'], days: 70, cost: 32_000_000, effect: '开源模型收入+50%', openSourceIncomeBonus: 0.50 },
+    expert_parallel: { name: '专家并行', desc: '将不同 MoE 专家分布到多组 GPU，同步执行以缩短训练瓶颈', tier: 4, deps: ['moe', 'parallel3d'], days: 95, cost: 55_000_000, effect: '训练效率+28%', effBonus: 0.28 },
+    kernel_fusion: { name: '算子融合编译', desc: '将连续的小算子编译为单个 GPU 内核，减少显存读写与调度开销', tier: 4, deps: ['fp8_training', 'flash_attention'], days: 75, cost: 38_000_000, effect: '训练效率+16%', effBonus: 0.16 },
+    retrieval_pretraining: { name: '检索增强预训练', desc: '训练模型主动检索可信资料并利用证据作答，提高知识密度', tier: 4, deps: ['data_dedup', 'tokenizer_opt'], days: 80, cost: 42_000_000, effect: '理解与推理质量+3%', qualityMod: 0.03 },
+    context_compression: { name: '上下文压缩', desc: '把冗长历史压缩为高信息密度记忆，在长上下文中保持关键线索', tier: 4, deps: ['ring_attention', 'gqa'], days: 70, cost: 34_000_000, effect: '长上下文质量+4%，训练效率+8%', qualityMod: 0.01, effBonus: 0.08 },
+    preference_optimization: { name: '偏好优化管线', desc: '自动清洗偏好对、难例挖掘并迭代对齐策略，提高可靠性', tier: 4, deps: ['grpo', 'constitutional'], days: 85, cost: 48_000_000, effect: '安全与推理质量+3%', qualityMod: 0.03 },
+    tool_use_training: { name: '工具调用训练', desc: '让模型学会规划、调用检索和代码工具，再根据结果修正答案', tier: 4, deps: ['grpo', 'synthetic_curriculum'], days: 90, cost: 52_000_000, effect: '编程与推理质量+4%', qualityMod: 0.03 },
+    smooth_quantization: { name: '平滑量化部署', desc: '在尽量保持精度的前提下压缩权重与激活值，降低推理成本', tier: 4, deps: ['qat', 'continuous_batching'], days: 65, cost: 30_000_000, effect: '推理收入+25%', incomeBonus: 0.25 },
+    privacy_preserving_data: { name: '隐私保护数据管线', desc: '在训练前做脱敏、去标识化与风险审计，获得更多可信企业数据', tier: 4, deps: ['data_dedup', 'constitutional'], days: 75, cost: 40_000_000, effect: '数据质量+3%，安全性提升', qualityMod: 0.03 }
   },
 
   // 研究员
