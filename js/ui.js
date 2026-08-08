@@ -400,6 +400,7 @@ const UI = {
       case 'new-training': html = UI.buildTrainingModal(); break;
       case 'hire-researcher': html = UI.buildHireResearcherModal(); break;
       case 'research': html = UI.buildResearchModal(); break;
+      case 'save-manager': html = UI.buildSaveManagerModal(); break;
     }
 
     content.innerHTML = html;
@@ -415,6 +416,7 @@ const UI = {
     else if (type === 'new-training') UI.bindTrainingEvents();
     else if (type === 'hire-researcher') UI.bindHireResearcherEvents();
     else if (type === 'research') UI.bindResearchEvents();
+    else if (type === 'save-manager') UI.bindSaveManagerEvents();
   },
 
   hideModal() {
@@ -423,13 +425,54 @@ const UI = {
 
   showDeleteConfirm() {
     const html = '<h2 class="text-lg font-bold text-danger mb-3">删除存档</h2>' +
-      '<div class="text-sm text-muted mb-4">确定要删除存档吗？所有游戏进度将永久丢失，游戏将重置回初始状态。</div>' +
+      '<div class="text-sm text-muted mb-4">确定要删除当前存档吗？只有当前存档会被删除，其他存档不会受到影响。</div>' +
       '<div class="flex gap-2 justify-end">' +
       '<button onclick="UI.hideModal()" class="modal-btn">取消</button>' +
       '<button onclick="UI.hideModal();SaveSystem.delete()" class="modal-btn" style="border-color:#e74c3c;color:#e74c3c">确认删除</button>' +
       '</div>';
     document.getElementById('modal-content').innerHTML = html;
     document.getElementById('modal-overlay').classList.remove('hidden');
+  },
+
+  buildSaveManagerModal() {
+    const slots = SaveSystem.getSlots();
+    let html = '<h2 class="text-lg font-bold text-accent mb-3">存档管理</h2>';
+    html += '<div class="text-xs text-muted mb-3">自动存档和手动保存都会写入当前存档。可把当前进度另存为新的存档槽。</div>';
+    html += '<div class="flex gap-2 mb-3"><input id="new-save-name" class="modal-input flex-1" maxlength="30" placeholder="新存档名称（例如：MoE 路线）"><button id="create-save-slot" class="modal-btn primary">另存为</button></div>';
+    html += '<div class="space-y-1">';
+    for (const slot of slots) {
+      const active = slot.id === SaveSystem.currentSlotId;
+      html += '<div class="border border-border rounded p-2 text-xs"><div class="flex justify-between gap-2"><div><div class="font-bold">' + slot.name + (active ? ' <span class="text-accent">（当前）</span>' : '') + '</div><div class="text-muted mt-0.5">第 ' + slot.day + ' 天｜$' + Economy.formatMoney(slot.cash) + '｜' + new Date(slot.timestamp).toLocaleString('zh-CN') + '</div></div><div class="flex gap-1 items-start">' +
+        (active ? '' : '<button class="text-accent save-switch" data-slot="' + slot.id + '">切换</button>') +
+        '<button class="text-danger save-delete" data-slot="' + slot.id + '">删除</button></div></div></div>';
+    }
+    html += '</div><div class="flex justify-end mt-3"><button onclick="UI.hideModal()" class="modal-btn">关闭</button></div>';
+    return html;
+  },
+
+  bindSaveManagerEvents() {
+    document.getElementById('create-save-slot').addEventListener('click', () => {
+      const input = document.getElementById('new-save-name');
+      const name = input.value.trim() || (Game.state.companyName + ' · 存档');
+      SaveSystem.createSlot(name);
+      UI.toast('已创建新存档，后续保存将写入该存档');
+      document.getElementById('modal-content').innerHTML = UI.buildSaveManagerModal();
+      UI.bindSaveManagerEvents();
+    });
+    document.querySelectorAll('.save-switch').forEach(button => button.addEventListener('click', () => {
+      localStorage.setItem(SaveSystem.LAST_SLOT_KEY, button.dataset.slot);
+      window.location.reload();
+    }));
+    document.querySelectorAll('.save-delete').forEach(button => button.addEventListener('click', () => {
+      const id = button.dataset.slot;
+      const active = id === SaveSystem.currentSlotId;
+      if (!confirm(active ? '删除当前存档并返回开始页？' : '删除这个存档？')) return;
+      SaveSystem.delete(id);
+      if (!active) {
+        document.getElementById('modal-content').innerHTML = UI.buildSaveManagerModal();
+        UI.bindSaveManagerEvents();
+      }
+    }));
   },
 
   showBankruptcyModal() {
