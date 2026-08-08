@@ -875,17 +875,19 @@ const UI = {
     const nextCost = CONFIG.DATACENTER_EXPAND_BASE_COST * Math.pow(CONFIG.DATACENTER_EXPAND_EXPONENT, s.datacenterExpands);
     const currentRows = Datacenter.ROWS;
     const currentCols = Datacenter.COLS;
-    const currentSlots = currentRows * currentCols;
-    const newRows = currentRows + 2;
-    const newCols = currentCols + 4;
-    const newSlots = newRows * newCols;
+    const preview = Datacenter.getExpansionPreview();
+    const currentSlots = preview.currentSlots;
+    const newRows = preview.rows;
+    const newCols = preview.cols;
+    const newSlots = preview.slots;
 
     let html = '<h2 class="text-lg font-bold text-accent mb-3">扩容数据中心</h2>';
-    html += '<div class="text-xs text-muted mb-2">每次扩容增加 2 行 x 4 列，扩容无上限，但费用指数增长</div>';
+    html += '<div class="text-xs text-muted mb-2">模块化扩建：每次增加 ' + CONFIG.DATACENTER_EXPAND_ROWS + ' 行 × ' + CONFIG.DATACENTER_EXPAND_COLS + ' 列；新增容量会随现有规模增长，费用逐次递增</div>';
     html += '<div class="bg-[#111118] rounded p-3 mb-3 text-xs">';
     html += '<div class="grid grid-cols-2 gap-1">';
     html += '<span class="text-muted">当前规模</span><span class="font-mono">' + currentRows + ' x ' + currentCols + ' (' + currentSlots + ' 机架)</span>';
     html += '<span class="text-muted">扩容后</span><span class="font-mono text-accent">' + newRows + ' x ' + newCols + ' (' + newSlots + ' 机架)</span>';
+    html += '<span class="text-muted">本次新增</span><span class="font-mono text-accent">+' + preview.addedSlots + ' 个 GPU 位</span>';
     html += '<span class="text-muted">已扩容次数</span><span class="font-mono">' + s.datacenterExpands + ' 次</span>';
     html += '</div></div>';
     html += '<div class="text-sm mb-3">本次扩容费用: <span id="datacenter-cost" class="text-accent font-bold">$' + Economy.formatMoney(nextCost) + '</span></div>';
