@@ -461,11 +461,22 @@ const Datacenter = {
   },
 
   expand() {
-    this.ROWS += 2;
-    this.COLS += 4;
+    const before = this.ROWS * this.COLS;
+    this.ROWS += CONFIG.DATACENTER_EXPAND_ROWS;
+    this.COLS += CONFIG.DATACENTER_EXPAND_COLS;
     this.updatePlatform();
     this.updateGround();
-    Game.addLog('数据中心已扩容至 ' + this.ROWS + 'x' + this.COLS + ' (' + (this.ROWS * this.COLS) + ' 机架)');
+    const added = this.ROWS * this.COLS - before;
+    Game.addLog('数据中心已扩容至 ' + this.ROWS + 'x' + this.COLS + '（新增 ' + added + ' 个 GPU 位）');
+    return { addedSlots: added, rows: this.ROWS, cols: this.COLS };
+  },
+
+  getExpansionPreview() {
+    const currentSlots = this.ROWS * this.COLS;
+    const rows = this.ROWS + CONFIG.DATACENTER_EXPAND_ROWS;
+    const cols = this.COLS + CONFIG.DATACENTER_EXPAND_COLS;
+    const slots = rows * cols;
+    return { rows, cols, currentSlots, slots, addedSlots: slots - currentSlots };
   },
 
   updateGround() {
