@@ -55,6 +55,7 @@ const Game = {
   },
 
   autoSaveTimer: 0, // 自动存档计时器（真实秒）
+  MAX_FRAME_DELTA_SECONDS: 0.25, // 防止浏览器切回前台后一次性快进大量游戏天数
 
   init() {
     // 初始化 GPU 库存
@@ -71,7 +72,9 @@ const Game = {
     if (!this.state.running) return;
     requestAnimationFrame((t) => this.loop(t));
 
-    const dt = (timestamp - this.state.lastFrame) / 1000; // 真实秒
+    const rawDt = (timestamp - this.state.lastFrame) / 1000;
+    // 页面在后台时 requestAnimationFrame 会被节流；恢复后只结算有限时长，避免跳日、连锁事件和卡顿。
+    const dt = Math.max(0, Math.min(rawDt, this.MAX_FRAME_DELTA_SECONDS));
     this.state.lastFrame = timestamp;
 
     // 自动存档（每100真实秒）
@@ -257,7 +260,9 @@ const Game = {
     let legacyInfRemaining = legacyInference;
 
     for (const [key, count] of Object.entries(this.state.gpuInventory)) {
-      const ratedMW = CONFIG.GPUS[key].power / 1_000_000;
+      const gpu = CONFIG.GPUS[key];
+      if (!gpu) continue; // 防御旧存档或被篡改存档中的未知 GPU 键
+      const ratedMW = gpu.power / 1_000_000;
       let trainingCount = Math.min(count, trainingAlloc[key] || 0);
       // 旧存档回退：按顺序分配训练GPU
       if (legacyTrainRemaining > 0 && trainingCount < count) {
