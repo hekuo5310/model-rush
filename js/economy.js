@@ -30,22 +30,8 @@ const Economy = {
     // 企业授权收入（每月结算，这里不做）
     s.dailyIncome = income;
 
-    // 电费（持续）
-    const totalPowerMW = Game.getTotalPowerMW();
-    const electricCost = totalPowerMW * 1000 * 24 * CONFIG.ELECTRICITY_PRICE;
-    expense += electricCost;
-
-    // 员工薪资（每日摊销）
-    let researcherSalary = 0;
-    const r = s.researchers;
-    researcherSalary += r.junior * CONFIG.RESEARCHER_TIERS.junior.salary;
-    researcherSalary += r.senior * CONFIG.RESEARCHER_TIERS.senior.salary;
-    researcherSalary += r.principal * CONFIG.RESEARCHER_TIERS.principal.salary;
-    const salaryDaily = (CONFIG.BASE_SALARY + s.gpuTotal * CONFIG.SALARY_PER_GPU + researcherSalary) / 30;
-    expense += salaryDaily;
-
-    // 数据中心租金（每日摊销）
-    expense += CONFIG.BASE_RENT / 30;
+    const costs = this.getOperatingCostBreakdown();
+    expense += costs.total;
 
     s.dailyExpense = expense;
 
@@ -68,6 +54,19 @@ const Economy = {
       const bestModel = s.deployedModels.reduce((a, b) => a.score > b.score ? a : b);
       s.valuation += bestModel.score * 100_000_000; // 模型价值
     }
+  },
+
+  // 日运营成本明细。电费已包含冷却系统耗电，避免对冷却重复计费。
+  getOperatingCostBreakdown() {
+    const s = Game.state;
+    const electricity = Game.getTotalPowerMW() * 1000 * 24 * CONFIG.ELECTRICITY_PRICE;
+    const network = CONFIG.NETWORK_BASE_DAILY_COST + Game.getInferenceGPUs() * CONFIG.NETWORK_PER_INFERENCE_GPU_DAILY_COST;
+    const r = s.researchers;
+    const researcherSalary = r.junior * CONFIG.RESEARCHER_TIERS.junior.salary +
+      r.senior * CONFIG.RESEARCHER_TIERS.senior.salary + r.principal * CONFIG.RESEARCHER_TIERS.principal.salary;
+    const salary = (CONFIG.BASE_SALARY + s.gpuTotal * CONFIG.SALARY_PER_GPU + researcherSalary) / 30;
+    const rent = CONFIG.BASE_RENT / 30;
+    return { electricity, network, salary, rent, total: electricity + network + salary + rent };
   },
 
   settleMonthly() {
