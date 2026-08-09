@@ -47,7 +47,8 @@ const Economy = {
     // 估值更新
     let gpuAssetValue = 0;
     for (const [key, count] of Object.entries(s.gpuInventory)) {
-      gpuAssetValue += count * CONFIG.GPUS[key].price;
+      const gpu = CONFIG.GPUS[key];
+      if (gpu) gpuAssetValue += count * gpu.price;
     }
     s.valuation = s.cash + gpuAssetValue;
     if (s.deployedModels.length > 0) {
