@@ -220,9 +220,14 @@ const SaveSystem = {
     if (data.researchState && typeof data.researchState === 'object') {
       Research.state = {
         unlocked: Array.isArray(data.researchState.unlocked) ? data.researchState.unlocked : [],
+        techLevels: (data.researchState.techLevels && typeof data.researchState.techLevels === 'object') ? data.researchState.techLevels : {},
         researching: (data.researchState.researching && typeof data.researchState.researching === 'object') ? data.researchState.researching : {},
         queue: Array.isArray(data.researchState.queue) ? data.researchState.queue : []
       };
+      // 旧存档已解锁技术默认视作 Lv.1，后续可继续升级。
+      for (const key of Research.state.unlocked) {
+        if (!Research.state.techLevels[key]) Research.state.techLevels[key] = 1;
+      }
     }
 
     // 恢复数据采集状态（防御性处理）
@@ -337,7 +342,7 @@ const SaveSystem = {
     Game.autoSaveTimer = 0;
 
     // 重置研究状态
-    Research.state = { unlocked: [], researching: {}, queue: [] };
+    Research.state = { unlocked: [], techLevels: {}, researching: {}, queue: [] };
 
     // 重置数据采集
     DataCollection.state = { sources: {}, collected: false, totalTokens: 0, avgQuality: 0 };
