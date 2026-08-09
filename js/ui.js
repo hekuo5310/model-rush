@@ -104,6 +104,9 @@ const UI = {
     // 右侧面板 - 财务
     document.getElementById('panel-income').textContent = '+$' + Economy.formatMoney(s.dailyIncome);
     document.getElementById('panel-expense').textContent = '-$' + Economy.formatMoney(s.dailyExpense);
+    const costs = Economy.getOperatingCostBreakdown();
+    document.getElementById('panel-electricity-expense').textContent = '-$' + Economy.formatMoney(costs.electricity);
+    document.getElementById('panel-network-expense').textContent = '-$' + Economy.formatMoney(costs.network);
     const profit = s.dailyIncome - s.dailyExpense;
     const profitEl = document.getElementById('panel-profit');
     profitEl.textContent = (profit >= 0 ? '+' : '') + '$' + Economy.formatMoney(profit);
