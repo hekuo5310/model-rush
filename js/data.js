@@ -47,7 +47,7 @@ const DataCollection = {
     const stats = this.getStats();
     let quality = stats.avgQuality;
     if (Research.isUnlocked('data_dedup')) {
-      quality += 0.08;
+      quality += 0.08 * Research.getTechLevel('data_dedup');
     }
     return Math.min(quality, 0.95);
   },
