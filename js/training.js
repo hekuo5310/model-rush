@@ -296,6 +296,7 @@ const Training = {
 
     const result = Benchmark.evaluate(t);
     const model = {
+      id: 'model_' + t.id + '_' + Date.now(),
       name: t.modelName,
       params: t.params,
       label: t.label || formatParams(t.params),
