@@ -1,5 +1,5 @@
 // Model Rush - 主入口
-window.addEventListener('DOMContentLoaded', () => {
+function initMain() {
   const input = document.getElementById('company-name-input');
   const errorEl = document.getElementById('company-name-error');
   const btn = document.getElementById('start-game-btn');
@@ -120,4 +120,12 @@ window.addEventListener('DOMContentLoaded', () => {
       try { SaveSystem.save(true); } catch (e) { /* 忽略 */ }
     }
   });
-});
+}
+
+// 常规脚本会在 DOMContentLoaded 前执行；但部分 CDN/优化器可能延后脚本执行。
+// 此处兼容两种时机，确保“进入游戏”按钮始终完成绑定。
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initMain, { once: true });
+} else {
+  initMain();
+}
