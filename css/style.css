@@ -277,7 +277,12 @@
 }
 
 /* === 主体flex布局 === */
-body { display: flex; flex-direction: column; }
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
 #main-body { flex: 1; min-height: 0; }
 
 /* === 移动端适配 === */
@@ -301,12 +306,14 @@ body { display: flex; flex-direction: column; }
     top: 0;
     right: 0;
     bottom: 0;
-    width: 85% !important;
-    max-width: 320px !important;
+    width: min(88vw, 380px) !important;
+    max-width: none !important;
     z-index: 30;
     transform: translateX(100%);
     transition: transform 0.25s ease;
     box-shadow: -4px 0 16px rgba(0,0,0,0.5);
+    overscroll-behavior: contain;
+    padding-bottom: env(safe-area-inset-bottom);
   }
   #right-panel.mobile-open {
     transform: translateX(0);
@@ -322,8 +329,8 @@ body { display: flex; flex-direction: column; }
     top: 8px;
     right: 8px;
     z-index: 31;
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
     background: #111118;
     border: 1px solid #2a2a3a;
     border-radius: 6px;
@@ -339,11 +346,12 @@ body { display: flex; flex-direction: column; }
     overflow-x: auto;
     overflow-y: visible;
     gap: 4px;
-    padding: 6px 8px;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
     -webkit-overflow-scrolling: touch;
   }
   #bottombar .action-btn {
-    padding: 6px 10px;
+    min-height: 36px;
+    padding: 7px 12px;
     font-size: 12px;
     white-space: nowrap;
     flex-shrink: 0;
@@ -367,12 +375,23 @@ body { display: flex; flex-direction: column; }
     padding: 12px !important;
     font-size: 12px;
   }
+  #modal-overlay {
+    padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+  }
+  #modal-content .modal-btn { min-height: 40px; }
   #modal-content .modal-input { font-size: 14px; }
 
   /* 启动界面 */
   #startup-overlay > div {
     width: 90vw !important;
     padding: 16px !important;
+  }
+
+  #toast {
+    left: 12px;
+    right: 12px;
+    top: max(56px, env(safe-area-inset-top));
+    text-align: center;
   }
 
   /* 面板标签字体缩小 */
@@ -390,8 +409,10 @@ body { display: flex; flex-direction: column; }
 }
 
 @media (max-width: 480px) {
-  #topbar { font-size: 10px; }
+  #topbar { font-size: 10px; gap: 3px 6px; }
   #topbar > span { font-size: 10px; }
+  /* 手机最窄屏优先展示现金、日期和速度控制，市值可在面板财务中查看。 */
+  #topbar > span:nth-child(3) { display: none; }
   .panel-tab { font-size: 10px; padding: 4px 1px; }
   #bottombar .action-btn { padding: 5px 8px; font-size: 11px; }
 }
