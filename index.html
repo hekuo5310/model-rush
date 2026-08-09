@@ -6,7 +6,7 @@
   <title>Model Rush</title>
   <script data-cfasync="false" src="https://cdn.tailwindcss.com"></script>
   <script data-cfasync="false" src="https://unpkg.com/three@0.148.0/build/three.min.js"></script>
-  <link rel="stylesheet" href="css/style.css?v=13">
+  <link rel="stylesheet" href="css/style.css?v=14">
   <script data-cfasync="false">
     tailwind.config = {
       theme: {
@@ -64,7 +64,7 @@
     <!-- 3D 场景 -->
     <div id="scene-container" class="flex-1 relative bg-[#0a0a0f]">
       <div id="scene-tooltip" class="absolute top-2 left-2 text-xs text-muted bg-panel/80 px-2 py-1 rounded pointer-events-none hidden"></div>
-      <button id="panel-toggle-btn" onclick="UI.toggleMobilePanel()">☰</button>
+      <button id="panel-toggle-btn" onclick="UI.toggleMobilePanel()" aria-label="打开信息面板" aria-expanded="false">☰</button>
     </div>
 
     <!-- 拖拽调整手柄 -->
