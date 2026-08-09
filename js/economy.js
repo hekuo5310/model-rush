@@ -14,10 +14,10 @@ const Economy = {
       const openSourceMult = this.getModelIncomeMultiplier(model);
       let incomeBonus = 1.0;
       if (model.techs && model.techs.includes('speculative')) {
-        incomeBonus += CONFIG.TECH_RESEARCH.speculative.incomeBonus;
+        incomeBonus += CONFIG.TECH_RESEARCH.speculative.incomeBonus * Research.getTechLevel('speculative');
       }
       if (model.techs && model.techs.includes('kv_cache')) {
-        incomeBonus += CONFIG.TECH_RESEARCH.kv_cache.incomeBonus;
+        incomeBonus += CONFIG.TECH_RESEARCH.kv_cache.incomeBonus * Research.getTechLevel('kv_cache');
       }
       const dailyTokens = dau * CONFIG.AVG_DAILY_TOKENS;
       // 收入受部署GPU数量影响（按型号折算为等效H100）
@@ -117,7 +117,7 @@ const Economy = {
     if (!model.openSource) return 1;
     let multiplier = CONFIG.OPEN_SOURCE_INCOME_MULTIPLIER;
     if (model.techs && model.techs.includes('open_source_ecosystem')) {
-      multiplier *= 1 + CONFIG.TECH_RESEARCH.open_source_ecosystem.openSourceIncomeBonus;
+      multiplier *= 1 + CONFIG.TECH_RESEARCH.open_source_ecosystem.openSourceIncomeBonus * Research.getTechLevel('open_source_ecosystem');
     }
     return multiplier;
   },
