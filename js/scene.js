@@ -17,6 +17,7 @@ const Scene = {
   lastHoverCheck: 0,
   lastRenderTime: 0,
   maxRenderFPS: 45,
+  webglAvailable: true,
 
   init() {
     this.container = document.getElementById('scene-container');
@@ -32,18 +33,32 @@ const Scene = {
     this.updateCameraPosition();
 
     // 场景以大量机架为主：适度限制像素比和关闭抗锯齿，优先保持操作流畅。
-    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
-    this.renderer.setSize(w, h);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
-    this.renderer.domElement.style.touchAction = 'none'; // 移动端手势由JS处理
-    this.container.appendChild(this.renderer.domElement);
+    // WebGL 被禁用或驱动不可用时，仍允许进入游戏并保留所有经营玩法。
+    try {
+      this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+      this.renderer.setSize(w, h);
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+      this.renderer.shadowMap.enabled = true;
+      this.renderer.shadowMap.type = THREE.PCFShadowMap;
+      this.renderer.domElement.style.touchAction = 'none'; // 移动端手势由JS处理
+      this.container.appendChild(this.renderer.domElement);
+      this.webglAvailable = true;
+    } catch (e) {
+      this.renderer = null;
+      this.webglAvailable = false;
+      console.warn('WebGL 不可用，已切换为机房简化模式', e);
+      const fallback = document.createElement('div');
+      fallback.className = 'absolute inset-0 flex items-center justify-center text-center text-muted text-sm p-6';
+      fallback.innerHTML = '<div><div class="text-accent mb-2">机房简化模式</div><div>当前浏览器无法启用 3D 渲染，经营与训练功能不受影响。</div></div>';
+      this.container.appendChild(fallback);
+    }
 
     this.setupLights();
     this.setupGrid();
-    this.setupControls();
-    this.setupClickInteraction();
+    if (this.renderer) {
+      this.setupControls();
+      this.setupClickInteraction();
+    }
 
     window.addEventListener('resize', () => this.onResize());
   },
