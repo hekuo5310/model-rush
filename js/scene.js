@@ -17,6 +17,7 @@ const Scene = {
   lastHoverCheck: 0,
   lastRenderTime: 0,
   maxRenderFPS: 45,
+  isMobile: false,
   webglAvailable: true,
 
   init() {
@@ -32,14 +33,16 @@ const Scene = {
     this.camera = new THREE.PerspectiveCamera(45, w / h, 0.5, 200);
     this.updateCameraPosition();
 
+    this.isMobile = window.matchMedia && window.matchMedia('(max-width: 768px), (pointer: coarse)').matches;
     // 场景以大量机架为主：适度限制像素比和关闭抗锯齿，优先保持操作流畅。
     // WebGL 被禁用或驱动不可用时，仍允许进入游戏并保留所有经营玩法。
     try {
       this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
       this.renderer.setSize(w, h);
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-      this.renderer.shadowMap.enabled = true;
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.isMobile ? 1 : 1.5));
+      this.renderer.shadowMap.enabled = !this.isMobile;
       this.renderer.shadowMap.type = THREE.PCFShadowMap;
+      this.maxRenderFPS = this.isMobile ? 30 : 45;
       this.renderer.domElement.style.touchAction = 'none'; // 移动端手势由JS处理
       this.container.appendChild(this.renderer.domElement);
       this.webglAvailable = true;
@@ -325,6 +328,7 @@ const Scene = {
     if (!this.container || !this.camera || !this.renderer) return;
     const w = this.container.clientWidth;
     const h = this.container.clientHeight;
+    if (w <= 0 || h <= 0) return;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
