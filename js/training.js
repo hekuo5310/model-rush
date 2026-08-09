@@ -347,6 +347,10 @@ const Training = {
     const t = Game.getActiveTrainings().find(item => item.id === id);
     if (!t) return;
     t.paused = !t.paused;
+    // 暂停即释放 GPU；恢复时按当前全部运行任务重新标记机架。
+    Datacenter.unmarkTrainingGPUs();
+    const activeAllocation = Game.getTrainingGPUAllocation();
+    if (Object.keys(activeAllocation).length > 0) Datacenter.markTrainingGPUs(activeAllocation);
     Game.addLog((t.paused ? '暂停训练: ' : '恢复训练: ') + t.modelName);
     UI.update();
   },
