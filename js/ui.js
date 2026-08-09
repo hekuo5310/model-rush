@@ -331,8 +331,8 @@ const UI = {
       const dau = CONFIG.DAILY_ACTIVE_USERS[scaleKey] || 500000;
       const openSourceMult = Economy.getModelIncomeMultiplier(model);
       let incomeBonus = 1.0;
-      if (model.techs && model.techs.includes('speculative')) incomeBonus += CONFIG.TECH_RESEARCH.speculative.incomeBonus;
-      if (model.techs && model.techs.includes('kv_cache')) incomeBonus += CONFIG.TECH_RESEARCH.kv_cache.incomeBonus;
+      if (model.techs && model.techs.includes('speculative')) incomeBonus += CONFIG.TECH_RESEARCH.speculative.incomeBonus * Research.getTechLevel('speculative');
+      if (model.techs && model.techs.includes('kv_cache')) incomeBonus += CONFIG.TECH_RESEARCH.kv_cache.incomeBonus * Research.getTechLevel('kv_cache');
       const dailyTokens = dau * CONFIG.AVG_DAILY_TOKENS;
       // 收入受部署GPU数量影响（按型号折算等效H100，不足时收入按比例降低）
       const recInference = recommendedInferenceGPUs(model.params || 0);
@@ -1384,12 +1384,12 @@ const UI = {
         let badge = '';
         let clickable = '';
         let blockHtml = '';
-        if (status === 'unlocked') {
-          badge = '<span class="tag tag-green text-xs">已解锁</span>';
+        if (status === 'maxed') {
+          badge = '<span class="tag tag-green text-xs">Lv.' + tech.currentLevel + ' 已满级</span>';
         } else if (status === 'researching') {
           badge = '<span class="tag tag-amber text-xs">研发中</span>';
-        } else if (status === 'available') {
-          badge = '<span class="tag text-xs border border-accent text-accent">可研发</span>';
+        } else if (status === 'available' || status === 'upgradeable') {
+          badge = '<span class="tag text-xs border border-accent text-accent">' + (status === 'upgradeable' ? '升级至 Lv.' + tech.upgrade.targetLevel : '可研发 Lv.1') + '</span>';
           clickable = 'research-tech-option cursor-pointer hover:border-accent';
         } else {
           // 根据 blockInfo 显示不同原因
@@ -1411,9 +1411,9 @@ const UI = {
           }
         }
         html += '<div class="' + clickable + ' p-2 border border-border rounded text-xs" data-tech="' + tech.key + '">' +
-          '<div class="flex justify-between items-center"><span class="font-bold">' + tech.name + '</span>' + badge + '</div>' +
+          '<div class="flex justify-between items-center"><span class="font-bold">' + tech.name + ' <span class="text-accent">Lv.' + tech.currentLevel + '/' + tech.maxLevel + '</span></span>' + badge + '</div>' +
           '<div class="text-muted mt-0.5">' + tech.desc + '</div>' +
-          '<div class="text-muted mt-0.5">' + tech.effect + ' | ' + tech.days + '天 | $' + Economy.formatMoney(tech.cost) + '</div>' +
+          '<div class="text-muted mt-0.5">每级 ' + tech.effect + (tech.upgrade && status !== 'maxed' ? ' | 下一等级 ' + tech.upgrade.days + '天 | $' + Economy.formatMoney(tech.upgrade.cost) : '') + '</div>' +
           (tech.deps.length > 0 ? '<div class="text-muted text-xs">前置: ' + tech.deps.map(d => CONFIG.TECH_RESEARCH[d]?.name || d).join(', ') + '</div>' : '') +
           blockHtml +
           '</div>';
