@@ -195,15 +195,26 @@ const SaveSystem = {
           model.label = model.scale;
         }
       }
-      if (model.deployed === undefined) model.deployed = true; // 旧存档默认已部署
+      model.deployed = true; // 在已部署列表中的模型始终视为已部署
       if (!model.deploymentGPUs && model.deployed) {
         // 旧存档没有部署GPU信息，用推荐数量占位
         const rec = recommendedInferenceGPUs(model.params || 70e9);
         model.deploymentGPUs = { _legacy: rec };
       }
     }
-    // 旧版本会把同一模型同时留在已完成和已部署列表；迁移后待部署列表只保留未部署模型。
-    s.completedModels = s.completedModels.filter(model => !model.deployed);
+    // 旧版本会把同一模型同时留在已完成和已部署列表，还可能遗留 deployed 标记。
+    // 只有确实已出现在已部署列表中的模型才移除；其余全部恢复为待部署，避免遗漏。
+    const modelKey = (model) => {
+      if (model.id) return 'id:' + model.id;
+      return 'legacy:' + [model.name || '', model.params || model.scale || '', Number(model.score || 0).toFixed(4)].join('|');
+    };
+    const deployedKeys = new Set(s.deployedModels.map(modelKey));
+    s.completedModels = s.completedModels.filter(model => {
+      if (deployedKeys.has(modelKey(model))) return false;
+      model.deployed = false;
+      model.deploymentGPUs = null;
+      return true;
+    });
     s.dailyIncome = gs.dailyIncome || 0;
     s.dailyExpense = gs.dailyExpense || 0;
     s.lastMonthlyDay = gs.lastMonthlyDay || 1;
