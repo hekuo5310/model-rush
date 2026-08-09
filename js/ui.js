@@ -310,7 +310,8 @@ const UI = {
     if (!el) return;
     const s = Game.state;
     const models = s.deployedModels.filter(model => model.deployed);
-    const pendingModels = s.completedModels.filter(model => !model.deployed);
+    // 旧存档可能残留 deployed 标记；以实际是否在已部署列表为准，避免待部署模型被隐藏。
+    const pendingModels = s.completedModels.filter(model => !UI.isModelDeployed(model));
 
     if (models.length === 0 && pendingModels.length === 0) {
       el.innerHTML = '<div class="text-muted italic">尚未部署任何模型。完成训练后选择GPU部署模型即可产生收入。</div>';
@@ -322,7 +323,7 @@ const UI = {
       html += '<div class="text-muted uppercase tracking-wider mb-1">待部署模型</div>';
       for (let i = 0; i < s.completedModels.length; i++) {
         const model = s.completedModels[i];
-        if (model.deployed) continue;
+        if (UI.isModelDeployed(model)) continue;
         const scoreColor = model.score >= 70 ? '#00cc66' : model.score >= 50 ? '#e6a817' : '#e74c3c';
         html += '<div class="border border-border rounded p-2 mb-2">' +
           '<div class="flex justify-between items-center"><span class="font-bold text-sm">' + model.name + '</span><span class="font-mono" style="color:' + scoreColor + '">' + model.score.toFixed(1) + '</span></div>' +
@@ -334,6 +335,7 @@ const UI = {
     }
     for (let i = 0; i < models.length; i++) {
       const model = models[i];
+      const deployedIndex = s.deployedModels.indexOf(model);
       const scoreColor = model.score >= 70 ? '#00cc66' : model.score >= 50 ? '#e6a817' : '#e74c3c';
       const label = model.label || formatParams(model.params) || model.scale || '--';
 
@@ -362,8 +364,8 @@ const UI = {
         '<span class="font-bold text-sm">' + model.name + '</span>' +
         '<div class="flex items-center gap-2">' +
         '<span class="font-mono text-base" style="color:' + scoreColor + '">' + model.score.toFixed(1) + '</span>' +
-        '<button onclick="UI.showAdjustDeploymentModal(' + i + ')" class="text-accent hover:text-white text-xs px-1 rounded border border-accent/40 hover:bg-accent/20" title="增减或替换该模型使用的GPU">调配 GPU</button>' +
-        '<button onclick="UI.removeDeployedModel(' + i + ')" class="text-danger hover:text-white text-xs px-1 rounded border border-danger/40 hover:bg-danger/20" title="下架模型(释放推理GPU)">下架</button>' +
+        '<button onclick="UI.showAdjustDeploymentModal(' + deployedIndex + ')" class="text-accent hover:text-white text-xs px-1 rounded border border-accent/40 hover:bg-accent/20" title="增减或替换该模型使用的GPU">调配 GPU</button>' +
+        '<button onclick="UI.removeDeployedModel(' + deployedIndex + ')" class="text-danger hover:text-white text-xs px-1 rounded border border-danger/40 hover:bg-danger/20" title="下架模型(释放推理GPU)">下架</button>' +
         '</div>' +
         '</div>' +
         '<div class="text-xs text-muted mt-0.5">' + label + ' | ' + (model.openSource ? '开源' : '闭源') + ' | 推理 <span class="text-amber font-mono">' + deployTotal + ' GPU</span> (等效H100 ×<span class="text-amber font-mono">' + deployEquiv.toFixed(1) + '</span>)</div>' +
@@ -408,11 +410,25 @@ const UI = {
 
   deployCompletedModel(index) {
     const model = Game.state.completedModels[index];
-    if (!model || model.deployed || Game.state.deployedModels.includes(model)) {
+    if (!model || UI.isModelDeployed(model)) {
       UI.toast('该模型已经部署，不能重复部署');
       return;
     }
+    model.deployed = false;
+    model.deploymentGPUs = null;
     UI.showDeployModelModal(model);
+  },
+
+  getModelKey(model) {
+    if (!model) return '';
+    if (model.id) return 'id:' + model.id;
+    // 兼容没有 id 的旧存档；得分通常可区分同规格的独立训练结果。
+    return 'legacy:' + [model.name || '', model.params || model.scale || '', Number(model.score || 0).toFixed(4)].join('|');
+  },
+
+  isModelDeployed(model) {
+    const key = UI.getModelKey(model);
+    return Game.state.deployedModels.some(item => item === model || UI.getModelKey(item) === key);
   },
 
   updateEventLog() {
@@ -527,7 +543,7 @@ const UI = {
   _pendingModel: null,
 
   showDeployModelModal(model) {
-    if (!model || model.deployed || Game.state.deployedModels.includes(model)) {
+    if (!model || UI.isModelDeployed(model)) {
       UI.toast('该模型已经部署，不能重复部署');
       return;
     }
