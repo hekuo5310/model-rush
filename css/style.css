@@ -283,7 +283,14 @@ body {
   min-height: 100vh;
   min-height: 100dvh;
 }
+/* 覆盖 Tailwind 的 h-screen：手机地址栏收起/展开时仍保留底部操作栏。 */
+body.h-screen { height: 100dvh; }
 #main-body { flex: 1; min-height: 0; }
+#bottombar {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 40;
+}
 
 /* === 移动端适配 === */
 @media (max-width: 768px) {
@@ -343,6 +350,7 @@ body {
   #bottombar {
     height: auto !important;
     min-height: 48px;
+    flex-shrink: 0;
     overflow-x: auto;
     overflow-y: visible;
     gap: 4px;
