@@ -11,7 +11,10 @@ const UI = {
   // 移动端面板切换
   toggleMobilePanel() {
     const panel = document.getElementById('right-panel');
-    if (panel) panel.classList.toggle('mobile-open');
+    if (!panel) return;
+    const opened = panel.classList.toggle('mobile-open');
+    const button = document.getElementById('panel-toggle-btn');
+    if (button) button.setAttribute('aria-expanded', String(opened));
   },
 
   initMobilePanel() {
@@ -20,8 +23,28 @@ const UI = {
       if (window.innerWidth <= 768 && e.target.id === 'scene-container') {
         const panel = document.getElementById('right-panel');
         if (panel) panel.classList.remove('mobile-open');
+        const button = document.getElementById('panel-toggle-btn');
+        if (button) button.setAttribute('aria-expanded', 'false');
       }
     });
+
+    // 手机端从面板向右滑可关闭，避免只能准确点击右上角按钮。
+    const panel = document.getElementById('right-panel');
+    let touchStartX = null;
+    if (panel) {
+      panel.addEventListener('touchstart', (e) => {
+        touchStartX = e.touches[0] ? e.touches[0].clientX : null;
+      }, { passive: true });
+      panel.addEventListener('touchend', (e) => {
+        const endX = e.changedTouches[0] ? e.changedTouches[0].clientX : null;
+        if (window.innerWidth <= 768 && touchStartX !== null && endX !== null && endX - touchStartX > 70) {
+          panel.classList.remove('mobile-open');
+          const button = document.getElementById('panel-toggle-btn');
+          if (button) button.setAttribute('aria-expanded', 'false');
+        }
+        touchStartX = null;
+      }, { passive: true });
+    }
   },
 
   initPanelTabs() {
