@@ -36,7 +36,7 @@ const Benchmark = {
     for (const techKey of (training.selectedTechs || [])) {
       const tech = CONFIG.TECH_RESEARCH[techKey];
       if (tech && tech.qualityMod) {
-        generalQuality += tech.qualityMod;
+        generalQuality += tech.qualityMod * Research.getTechLevel(techKey);
       }
     }
     if (training.alignmentMethod === 'rlhf') {
@@ -76,7 +76,7 @@ const Benchmark = {
       for (const techKey of (training.selectedTechs || [])) {
         const bonusMap = this.CATEGORY_TECH_BONUSES[techKey];
         if (bonusMap && bonusMap[key]) {
-          catTechBonus += bonusMap[key];
+          catTechBonus += bonusMap[key] * Research.getTechLevel(techKey);
         }
       }
       catScore *= catTechBonus;
