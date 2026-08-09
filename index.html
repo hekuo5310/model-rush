@@ -215,18 +215,19 @@
   <!-- Toast -->
   <div id="toast" class="hidden fixed top-16 right-4 bg-panel border border-accent rounded px-4 py-2 text-sm z-50 shadow-lg"></div>
 
-  <script src="js/config.js?v=14"></script>
-  <script src="js/game.js?v=14"></script>
-  <script src="js/economy.js?v=14"></script>
-  <script src="js/training.js?v=14"></script>
-  <script src="js/benchmark.js?v=14"></script>
-  <script src="js/research.js?v=14"></script>
-  <script src="js/data.js?v=14"></script>
-  <script src="js/events.js?v=14"></script>
-  <script src="js/save.js?v=14"></script>
-  <script src="js/scene.js?v=14"></script>
-  <script src="js/datacenter.js?v=14"></script>
-  <script src="js/ui.js?v=14"></script>
-  <script src="js/main.js?v=15"></script>
+  <!-- 禁用 Cloudflare Rocket Loader 对游戏脚本的延迟改写，保证启动事件按顺序绑定。 -->
+  <script data-cfasync="false" src="js/config.js?v=14"></script>
+  <script data-cfasync="false" src="js/game.js?v=14"></script>
+  <script data-cfasync="false" src="js/economy.js?v=14"></script>
+  <script data-cfasync="false" src="js/training.js?v=14"></script>
+  <script data-cfasync="false" src="js/benchmark.js?v=14"></script>
+  <script data-cfasync="false" src="js/research.js?v=14"></script>
+  <script data-cfasync="false" src="js/data.js?v=14"></script>
+  <script data-cfasync="false" src="js/events.js?v=14"></script>
+  <script data-cfasync="false" src="js/save.js?v=14"></script>
+  <script data-cfasync="false" src="js/scene.js?v=14"></script>
+  <script data-cfasync="false" src="js/datacenter.js?v=14"></script>
+  <script data-cfasync="false" src="js/ui.js?v=14"></script>
+  <script data-cfasync="false" src="js/main.js?v=15"></script>
 </body>
 </html>
