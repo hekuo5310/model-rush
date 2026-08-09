@@ -314,8 +314,7 @@ const Training = {
     Game.addLog(t.modelName + ' 综合得分: ' + result.overallScore.toFixed(1) + (t.openSource ? ' [开源]' : ' [闭源]'));
     UI.toast(t.modelName + ' 训练完成! 得分: ' + result.overallScore.toFixed(1));
 
-    // 弹出部署选择模态框
-    UI.showDeployModelModal(model);
+    Game.addLog(t.modelName + ' 已加入待部署模型，可在产品页手动部署');
     UI.update();
   },
 
