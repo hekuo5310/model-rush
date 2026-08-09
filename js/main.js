@@ -6,6 +6,15 @@ window.addEventListener('DOMContentLoaded', () => {
   const overlay = document.getElementById('startup-overlay');
   const continueSection = document.getElementById('continue-section');
   const saveSlotsList = document.getElementById('save-slots-list');
+  let modalCloseBound = false;
+
+  function bindModalClose() {
+    if (modalCloseBound) return;
+    document.getElementById('modal-overlay').addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) UI.hideModal();
+    });
+    modalCloseBound = true;
+  }
 
   function renderSaveSlots() {
     const slots = SaveSystem.getSlots();
@@ -37,27 +46,30 @@ window.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    Game.state.companyName = name;
-    document.getElementById('company-name-display').textContent = name;
-    overlay.style.display = 'none';
+    try {
+      // 所有依赖系统完成后才启动游戏循环，避免首帧访问未初始化的研发或界面状态。
+      Game.state.companyName = name;
+      document.getElementById('company-name-display').textContent = name;
+      Scene.init();
+      Datacenter.init();
+      Research.init();
+      DataCollection.init();
+      UI.init();
+      bindModalClose();
+      Game.init();
 
-    // 初始化所有系统
-    Scene.init();
-    Datacenter.init();
-    Game.init();
-    Research.init();
-    DataCollection.init();
-    UI.init();
-
-    // 点击模态框遮罩关闭
-    document.getElementById('modal-overlay').addEventListener('click', (e) => {
-      if (e.target === e.currentTarget) UI.hideModal();
-    });
-
-    Game.addLog(name + ' 成立! 初始资金 $' + Economy.formatMoney(CONFIG.INITIAL_CASH));
-    Game.addLog('数据中心已就绪，供电 ' + CONFIG.INITIAL_POWER_CAPACITY_MW + 'MW');
-    SaveSystem.createSlot(name + ' · 第 1 天');
-    UI.update();
+      Game.addLog(name + ' 成立! 初始资金 $' + Economy.formatMoney(CONFIG.INITIAL_CASH));
+      Game.addLog('数据中心已就绪，供电 ' + CONFIG.INITIAL_POWER_CAPACITY_MW + 'MW');
+      SaveSystem.createSlot(name + ' · 第 1 天');
+      UI.update();
+      overlay.style.display = 'none';
+    } catch (e) {
+      // 初始化失败时不要隐藏入口，用户可直接重试而不是陷入空白页面。
+      Game.state.running = false;
+      console.error('游戏初始化失败', e);
+      errorEl.textContent = '初始化失败，请刷新页面后重试';
+      errorEl.classList.remove('hidden');
+    }
   }
 
   function continueGame(slotId) {
@@ -75,10 +87,7 @@ window.addEventListener('DOMContentLoaded', () => {
     DataCollection.init();
     UI.init();
 
-    // 点击模态框遮罩关闭
-    document.getElementById('modal-overlay').addEventListener('click', (e) => {
-      if (e.target === e.currentTarget) UI.hideModal();
-    });
+    bindModalClose();
 
     // 加载存档
     const loaded = SaveSystem.load(slotId);
