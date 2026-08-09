@@ -105,6 +105,9 @@ const CONFIG = {
     3: { name: '架构级', requiredCompleted: 8, desc: '可研发高级技术' },
     4: { name: '前沿级', requiredCompleted: 15, desc: '可研发前沿技术' }
   },
+  TECH_UPGRADE_MAX_LEVEL: 3,
+  TECH_UPGRADE_COST_MULTIPLIER: 1.75,
+  TECH_UPGRADE_DAYS_MULTIPLIER: 1.35,
   TECH_RESEARCH: {
     // Tier 1 - 基础技术（无需前置，新手友好）
     flash_attention: { name: 'Flash Attention', desc: '让GPU算得更快，每次只算一小块注意力，省显存', tier: 1, deps: [], days: 30, cost: 5_000_000, effect: '训练效率+20%', effBonus: 0.20 },
