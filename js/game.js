@@ -217,7 +217,8 @@ const Game = {
     this.state.activeTraining = this.getActiveTrainings()[0] || null;
   },
 
-  getTrainingGPUAllocation(includePaused = true) {
+  // 默认只统计运行中的训练；暂停任务会释放 GPU，可被推理或其他训练重新分配。
+  getTrainingGPUAllocation(includePaused = false) {
     const allocation = {};
     for (const training of this.getActiveTrainings()) {
       if (!includePaused && training.paused) continue;
@@ -240,7 +241,8 @@ const Game = {
   // 可用于训练的GPU数（总数 - 推理占用）
   getAvailableGPUs() {
     const training = Object.values(this.getTrainingGPUAllocation()).reduce((a, b) => a + b, 0);
-    return Math.max(0, this.state.gpuTotal - this.getInferenceGPUs() - training);
+    const owned = Object.values(this.state.gpuInventory).reduce((sum, count) => sum + (Number(count) || 0), 0);
+    return Math.max(0, owned - this.getInferenceGPUs() - training);
   },
 
   // GPU 实际功耗（训练中GPU满载，推理GPU中载，闲置GPU低功耗）
