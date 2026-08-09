@@ -5,6 +5,9 @@ const CONFIG = {
 
   // 电价 ($/kWh)
   ELECTRICITY_PRICE: 0.08,
+  // 网络接入与带宽费用（每日）；随已部署的推理 GPU 增长。
+  NETWORK_BASE_DAILY_COST: 100_000,
+  NETWORK_PER_INFERENCE_GPU_DAILY_COST: 15_000,
 
   // 供电
   INITIAL_POWER_CAPACITY_MW: 1,
