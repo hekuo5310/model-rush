@@ -95,6 +95,8 @@
             <div class="grid grid-cols-2 gap-1">
               <span class="text-muted">日收入</span><span id="panel-income" class="text-accent font-mono text-right">+$0</span>
               <span class="text-muted">日支出</span><span id="panel-expense" class="text-danger font-mono text-right">-$0</span>
+              <span class="text-muted">电费（含冷却）</span><span id="panel-electricity-expense" class="font-mono text-right">-$0</span>
+              <span class="text-muted">网费</span><span id="panel-network-expense" class="font-mono text-right">-$0</span>
               <span class="text-muted">日利润</span><span id="panel-profit" class="font-mono text-right">$0</span>
               <span class="text-muted">现金</span><span id="panel-cash" class="text-accent font-mono text-right">$500.00M</span>
             </div>
@@ -216,9 +218,9 @@
   <div id="toast" class="hidden fixed top-16 right-4 bg-panel border border-accent rounded px-4 py-2 text-sm z-50 shadow-lg"></div>
 
   <!-- 禁用 Cloudflare Rocket Loader 对游戏脚本的延迟改写，保证启动事件按顺序绑定。 -->
-  <script data-cfasync="false" src="js/config.js?v=15"></script>
+  <script data-cfasync="false" src="js/config.js?v=16"></script>
   <script data-cfasync="false" src="js/game.js?v=15"></script>
-  <script data-cfasync="false" src="js/economy.js?v=16"></script>
+  <script data-cfasync="false" src="js/economy.js?v=17"></script>
   <script data-cfasync="false" src="js/training.js?v=17"></script>
   <script data-cfasync="false" src="js/benchmark.js?v=15"></script>
   <script data-cfasync="false" src="js/research.js?v=15"></script>
@@ -227,7 +229,7 @@
   <script data-cfasync="false" src="js/save.js?v=16"></script>
   <script data-cfasync="false" src="js/scene.js?v=15"></script>
   <script data-cfasync="false" src="js/datacenter.js?v=14"></script>
-  <script data-cfasync="false" src="js/ui.js?v=18"></script>
+  <script data-cfasync="false" src="js/ui.js?v=19"></script>
   <script data-cfasync="false" src="js/main.js?v=15"></script>
 </body>
 </html>
