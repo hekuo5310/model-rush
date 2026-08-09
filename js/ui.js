@@ -251,14 +251,19 @@ const UI = {
   updateGPUInventory() {
     const s = Game.state;
     const el = document.getElementById('gpu-inventory');
+    const trainingAlloc = Game.getTrainingGPUAllocation();
+    const inferenceAlloc = Game.getInferenceGPUAllocation();
     let html = '';
     for (const [key, count] of Object.entries(s.gpuInventory)) {
       if (count > 0) {
         const gpu = CONFIG.GPUS[key];
         const colorHex = '#' + gpu.color.toString(16).padStart(6, '0');
+        const trainingUsed = trainingAlloc[key] || 0;
+        const inferenceUsed = inferenceAlloc[key] || 0;
+        const available = Math.max(0, count - trainingUsed - inferenceUsed);
         html += '<div class="flex justify-between text-xs">' +
           '<span><span class="inline-block w-2 h-2 rounded-full mr-1" style="background:' + colorHex + '"></span>' + key + '</span>' +
-          '<span class="font-mono">' + count + '</span>' +
+          '<span class="font-mono">' + count + ' <span class="text-amber">(训' + trainingUsed + ' / 推' + inferenceUsed + ' / 闲' + available + ')</span></span>' +
           '</div>';
       }
     }
@@ -275,7 +280,8 @@ const UI = {
     document.getElementById('panel-power-cap').textContent = s.powerCapacityMW + '';
     document.getElementById('panel-cooling-load').textContent = coolingLoad.toFixed(2);
     document.getElementById('panel-cooling-cap').textContent = s.coolingCapacityMW + '';
-    document.getElementById('panel-gpu-total').textContent = s.gpuTotal + (inferenceGPUs > 0 ? ' (推理 ' + inferenceGPUs + ' / 可用 ' + availableGPUs + ')' : '');
+    const trainingGPUs = Object.values(trainingAlloc).reduce((sum, count) => sum + count, 0);
+    document.getElementById('panel-gpu-total').textContent = s.gpuTotal + ' (训练 ' + trainingGPUs + ' / 推理 ' + inferenceGPUs + ' / 可用 ' + availableGPUs + ')';
 
     // 功耗状态提示
     const powerEl = document.getElementById('panel-power');
@@ -1112,12 +1118,14 @@ const UI = {
 
     // GPU 分配（按型号选择，最少需求按算力折算）
     const inferenceAlloc = Game.getInferenceGPUAllocation();
+    const trainingAlloc = Game.getTrainingGPUAllocation();
     html += '<div class="mb-2 text-xs">选择训练GPU型号及数量 (每型号最少需求已按算力折算):</div>';
     html += '<div class="grid grid-cols-1 gap-1 mb-2" id="gpu-alloc-grid">';
     for (const [key, gpu] of Object.entries(CONFIG.GPUS)) {
       const owned = s.gpuInventory[key] || 0;
       const inferenceUsed = inferenceAlloc[key] || 0;
-      const avail = Math.max(0, owned - inferenceUsed);
+      const trainingUsed = trainingAlloc[key] || 0;
+      const avail = Math.max(0, owned - inferenceUsed - trainingUsed);
       const recType = recommendedInferenceGPUsForType(70e9, key);
       const defaultVal = Math.min(recType, avail);
       const colorHex = '#' + gpu.color.toString(16).padStart(6, '0');
@@ -1125,7 +1133,7 @@ const UI = {
         '<span class="inline-block w-2 h-2 rounded-full" style="background:' + colorHex + '"></span>' +
         '<span class="font-bold w-16">' + key + '</span>' +
         '<span class="text-muted flex-1">' + gpu.tflops + ' TFLOPS | ' + (gpu.power / 1000) + 'kW</span>' +
-        '<span class="text-muted">可用 ' + avail + '/' + owned + '</span>' +
+        '<span class="text-muted">可用 ' + avail + '/' + owned + (trainingUsed > 0 ? '（训练占用' + trainingUsed + '）' : '') + '</span>' +
         '<span class="text-accent" id="rec-' + key + '" title="最少训练数">最少' + recType + '</span>' +
         '<input type="number" class="modal-input w-16 gpu-alloc-input" data-gpu="' + key + '" data-max="' + avail + '" data-auto="' + defaultVal + '" value="' + defaultVal + '" min="0" max="' + avail + '"' + (owned === 0 ? ' disabled' : '') + '>' +
         '</div>';
@@ -1288,7 +1296,7 @@ const UI = {
         return;
       }
 
-      Training.newTraining({
+      const created = Training.newTraining({
         modelName,
         params: selectedParams,
         alignmentMethod: selectedAlign,
@@ -1296,7 +1304,7 @@ const UI = {
         gpuAllocation,
         openSource: selectedOpen
       });
-      UI.hideModal();
+      if (created) UI.hideModal();
     });
   },
 
