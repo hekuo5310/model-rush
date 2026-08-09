@@ -60,7 +60,8 @@ const Economy = {
   getOperatingCostBreakdown() {
     const s = Game.state;
     const electricity = Game.getTotalPowerMW() * 1000 * 24 * CONFIG.ELECTRICITY_PRICE;
-    const network = CONFIG.NETWORK_BASE_DAILY_COST + Game.getInferenceGPUs() * CONFIG.NETWORK_PER_INFERENCE_GPU_DAILY_COST;
+    const deployedCount = s.deployedModels.filter(model => model.deployed).length;
+    const network = deployedCount * CONFIG.NETWORK_DAILY_COST_PER_DEPLOYED_MODEL;
     const r = s.researchers;
     const researcherSalary = r.junior * CONFIG.RESEARCHER_TIERS.junior.salary +
       r.senior * CONFIG.RESEARCHER_TIERS.senior.salary + r.principal * CONFIG.RESEARCHER_TIERS.principal.salary;
