@@ -306,14 +306,29 @@ const UI = {
     const el = document.getElementById('products-list');
     if (!el) return;
     const s = Game.state;
-    const models = s.deployedModels;
+    const models = s.deployedModels.filter(model => model.deployed);
+    const pendingModels = s.completedModels.filter(model => !model.deployed);
 
-    if (models.length === 0) {
+    if (models.length === 0 && pendingModels.length === 0) {
       el.innerHTML = '<div class="text-muted italic">尚未部署任何模型。完成训练后选择GPU部署模型即可产生收入。</div>';
       return;
     }
 
     let html = '';
+    if (pendingModels.length > 0) {
+      html += '<div class="text-muted uppercase tracking-wider mb-1">待部署模型</div>';
+      for (let i = 0; i < s.completedModels.length; i++) {
+        const model = s.completedModels[i];
+        if (model.deployed) continue;
+        const scoreColor = model.score >= 70 ? '#00cc66' : model.score >= 50 ? '#e6a817' : '#e74c3c';
+        html += '<div class="border border-border rounded p-2 mb-2">' +
+          '<div class="flex justify-between items-center"><span class="font-bold text-sm">' + model.name + '</span><span class="font-mono" style="color:' + scoreColor + '">' + model.score.toFixed(1) + '</span></div>' +
+          '<div class="text-xs text-muted mt-0.5">' + (model.label || formatParams(model.params)) + ' | ' + (model.openSource ? '开源' : '闭源') + '</div>' +
+          '<button onclick="UI.deployCompletedModel(' + i + ')" class="text-accent hover:text-white text-xs mt-2 px-2 py-1 rounded border border-accent/40 hover:bg-accent/20">手动部署</button>' +
+          '</div>';
+      }
+      if (models.length > 0) html += '<div class="text-muted uppercase tracking-wider mb-1 mt-3">已部署模型</div>';
+    }
     for (let i = 0; i < models.length; i++) {
       const model = models[i];
       const scoreColor = model.score >= 70 ? '#00cc66' : model.score >= 50 ? '#e6a817' : '#e74c3c';
@@ -380,9 +395,21 @@ const UI = {
     if (!model) return;
     const freedGPUs = model.deploymentGPUs ? Object.values(model.deploymentGPUs).reduce((a, b) => a + b, 0) : 0;
     s.deployedModels.splice(idx, 1);
-    Game.addLog('下架模型: ' + model.name + ' (释放 ' + freedGPUs + ' GPU)');
-    UI.toast('已下架 ' + model.name + ', 释放 ' + freedGPUs + ' GPU');
+    model.deployed = false;
+    model.deploymentGPUs = null;
+    if (!s.completedModels.includes(model)) s.completedModels.push(model);
+    Game.addLog('下架模型: ' + model.name + ' (释放 ' + freedGPUs + ' GPU，已移回待部署列表)');
+    UI.toast('已下架 ' + model.name + ', 可稍后手动重新部署');
     UI.update();
+  },
+
+  deployCompletedModel(index) {
+    const model = Game.state.completedModels[index];
+    if (!model || model.deployed || Game.state.deployedModels.includes(model)) {
+      UI.toast('该模型已经部署，不能重复部署');
+      return;
+    }
+    UI.showDeployModelModal(model);
   },
 
   updateEventLog() {
@@ -497,6 +524,10 @@ const UI = {
   _pendingModel: null,
 
   showDeployModelModal(model) {
+    if (!model || model.deployed || Game.state.deployedModels.includes(model)) {
+      UI.toast('该模型已经部署，不能重复部署');
+      return;
+    }
     UI._pendingModel = model;
     const s = Game.state;
     const recInference = recommendedInferenceGPUs(model.params);
@@ -587,6 +618,8 @@ const UI = {
       UI._pendingModel.deployed = true;
       UI._pendingModel.deploymentGPUs = deploymentGPUs;
       Game.state.deployedModels.push(UI._pendingModel);
+      const pendingIndex = Game.state.completedModels.indexOf(UI._pendingModel);
+      if (pendingIndex >= 0) Game.state.completedModels.splice(pendingIndex, 1);
       UI._pendingModel = null;
       UI.hideModal();
       Game.addLog('模型 ' + modelName + ' 已部署，推理占用 ' + total + ' GPU');
