@@ -48,7 +48,7 @@ const Training = {
     let efficiency = CONFIG.BASE_EFFICIENCY;
     for (const techKey of (config.selectedTechs || [])) {
       const tech = CONFIG.TECH_RESEARCH[techKey];
-      if (tech && tech.effBonus) efficiency += tech.effBonus;
+      if (tech && tech.effBonus) efficiency += tech.effBonus * Research.getTechLevel(techKey);
     }
     efficiency *= Game.getEffMultiplier();
 
