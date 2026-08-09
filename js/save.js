@@ -202,6 +202,8 @@ const SaveSystem = {
         model.deploymentGPUs = { _legacy: rec };
       }
     }
+    // 旧版本会把同一模型同时留在已完成和已部署列表；迁移后待部署列表只保留未部署模型。
+    s.completedModels = s.completedModels.filter(model => !model.deployed);
     s.dailyIncome = gs.dailyIncome || 0;
     s.dailyExpense = gs.dailyExpense || 0;
     s.lastMonthlyDay = gs.lastMonthlyDay || 1;
