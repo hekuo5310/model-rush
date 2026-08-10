@@ -1,6 +1,4 @@
 // Model Rush - 模型训练系统
-// 作者：mukunjin
-// 仓库：https://github.com/mukunjin/model-rush
 const Training = {
   // 当前训练任务: { phase, scale, dataQuality, alignmentMethod, selectedTechs, gpuAllocated, totalDays, elapsedDays, phaseElapsedDays, modelName, openSource, hparams, subPhase, subPhaseElapsedDays, checkpoints, trainingEventPenalty, interruptions, collapsed }
   newTraining(config) {
@@ -319,6 +317,7 @@ const Training = {
 
     Game.addLog(t.modelName + ' 已加入待部署模型，可在产品页手动部署');
     UI.update();
+    UI.refreshActiveModal(['new-training']);
   },
 
   clearTraining(task) {
