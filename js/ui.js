@@ -1,4 +1,6 @@
 // Model Rush - UI 更新与交互
+// 作者：mukunjin
+// 仓库：https://github.com/mukunjin/model-rush
 const UI = {
   init() {
     UI.update();
@@ -475,11 +477,11 @@ const UI = {
       case 'new-training': html = UI.buildTrainingModal(); break;
       case 'hire-researcher': html = UI.buildHireResearcherModal(); break;
       case 'research': html = UI.buildResearchModal(); break;
-      case 'save-manager': html = UI.buildSaveManagerModal(); break;
     }
 
     content.innerHTML = html;
     overlay.classList.remove('hidden');
+    document.getElementById('modal-close-btn').classList.remove('hidden');
 
     // 绑定事件
     if (type === 'buy-gpu') UI.bindBuyGPUEvents();
@@ -491,63 +493,22 @@ const UI = {
     else if (type === 'new-training') UI.bindTrainingEvents();
     else if (type === 'hire-researcher') UI.bindHireResearcherEvents();
     else if (type === 'research') UI.bindResearchEvents();
-    else if (type === 'save-manager') UI.bindSaveManagerEvents();
   },
 
   hideModal() {
     document.getElementById('modal-overlay').classList.add('hidden');
+    document.getElementById('modal-close-btn').classList.add('hidden');
   },
 
   showDeleteConfirm() {
     const html = '<h2 class="text-lg font-bold text-danger mb-3">删除存档</h2>' +
-      '<div class="text-sm text-muted mb-4">确定要删除当前存档吗？只有当前存档会被删除，其他存档不会受到影响。</div>' +
+      '<div class="text-sm text-muted mb-4">确定要删除存档吗？所有游戏进度将永久丢失。</div>' +
       '<div class="flex gap-2 justify-end">' +
-      '<button onclick="UI.hideModal()" class="modal-btn">取消</button>' +
       '<button onclick="UI.hideModal();SaveSystem.delete()" class="modal-btn" style="border-color:#e74c3c;color:#e74c3c">确认删除</button>' +
       '</div>';
     document.getElementById('modal-content').innerHTML = html;
     document.getElementById('modal-overlay').classList.remove('hidden');
-  },
-
-  buildSaveManagerModal() {
-    const slots = SaveSystem.getSlots();
-    let html = '<h2 class="text-lg font-bold text-accent mb-3">存档管理</h2>';
-    html += '<div class="text-xs text-muted mb-3">自动存档和手动保存都会写入当前存档。可把当前进度另存为新的存档槽。</div>';
-    html += '<div class="flex gap-2 mb-3"><input id="new-save-name" class="modal-input flex-1" maxlength="30" placeholder="新存档名称（例如：MoE 路线）"><button id="create-save-slot" class="modal-btn primary">另存为</button></div>';
-    html += '<div class="space-y-1">';
-    for (const slot of slots) {
-      const active = slot.id === SaveSystem.currentSlotId;
-      html += '<div class="border border-border rounded p-2 text-xs"><div class="flex justify-between gap-2"><div><div class="font-bold">' + slot.name + (active ? ' <span class="text-accent">（当前）</span>' : '') + '</div><div class="text-muted mt-0.5">第 ' + slot.day + ' 天｜$' + Economy.formatMoney(slot.cash) + '｜' + new Date(slot.timestamp).toLocaleString('zh-CN') + '</div></div><div class="flex gap-1 items-start">' +
-        (active ? '' : '<button class="text-accent save-switch" data-slot="' + slot.id + '">切换</button>') +
-        '<button class="text-danger save-delete" data-slot="' + slot.id + '">删除</button></div></div></div>';
-    }
-    html += '</div><div class="flex justify-end mt-3"><button onclick="UI.hideModal()" class="modal-btn">关闭</button></div>';
-    return html;
-  },
-
-  bindSaveManagerEvents() {
-    document.getElementById('create-save-slot').addEventListener('click', () => {
-      const input = document.getElementById('new-save-name');
-      const name = input.value.trim() || (Game.state.companyName + ' · 存档');
-      SaveSystem.createSlot(name);
-      UI.toast('已创建新存档，后续保存将写入该存档');
-      document.getElementById('modal-content').innerHTML = UI.buildSaveManagerModal();
-      UI.bindSaveManagerEvents();
-    });
-    document.querySelectorAll('.save-switch').forEach(button => button.addEventListener('click', () => {
-      localStorage.setItem(SaveSystem.LAST_SLOT_KEY, button.dataset.slot);
-      window.location.reload();
-    }));
-    document.querySelectorAll('.save-delete').forEach(button => button.addEventListener('click', () => {
-      const id = button.dataset.slot;
-      const active = id === SaveSystem.currentSlotId;
-      if (!confirm(active ? '删除当前存档并返回开始页？' : '删除这个存档？')) return;
-      SaveSystem.delete(id);
-      if (!active) {
-        document.getElementById('modal-content').innerHTML = UI.buildSaveManagerModal();
-        UI.bindSaveManagerEvents();
-      }
-    }));
+    document.getElementById('modal-close-btn').classList.remove('hidden');
   },
 
   showBankruptcyModal() {
@@ -560,6 +521,7 @@ const UI = {
       '</div>';
     document.getElementById('modal-content').innerHTML = html;
     document.getElementById('modal-overlay').classList.remove('hidden');
+    document.getElementById('modal-close-btn').classList.remove('hidden');
   },
 
   // === 部署模型模态框 ===
@@ -616,6 +578,7 @@ const UI = {
 
     document.getElementById('modal-content').innerHTML = html;
     document.getElementById('modal-overlay').classList.remove('hidden');
+    document.getElementById('modal-close-btn').classList.remove('hidden');
 
     // 绑定事件
     const updateDeployStats = () => {
@@ -710,9 +673,10 @@ const UI = {
     }
     html += '</div>';
     html += '<div class="text-xs mb-3">GPU 数量: <span id="adjust-gpu-total" class="font-mono text-accent">0</span> | 等效 H100: <span id="adjust-gpu-equivalent" class="font-mono text-accent">0.0</span>/<span class="font-mono">' + minimum + '</span></div>';
-    html += '<div class="flex gap-2 justify-end"><button onclick="UI.hideModal()" class="modal-btn">取消</button><button id="confirm-adjust-deploy" class="modal-btn primary">保存调配</button></div>';
+    html += '<div class="flex gap-2 justify-end"><button id="confirm-adjust-deploy" class="modal-btn primary">保存调配</button></div>';
     document.getElementById('modal-content').innerHTML = html;
     document.getElementById('modal-overlay').classList.remove('hidden');
+    document.getElementById('modal-close-btn').classList.remove('hidden');
 
     const readAllocation = () => {
       const allocation = {};
@@ -797,7 +761,6 @@ const UI = {
     html += '<div class="text-xs text-muted mb-3">预计花费: <span id="gpu-cost" class="text-accent">$0</span></div>';
 
     html += '<div class="flex gap-2 justify-end">' +
-      '<button onclick="UI.hideModal()" class="modal-btn">取消</button>' +
       '<button id="confirm-buy" class="modal-btn primary">确认购买</button>' +
       '</div>';
 
@@ -877,7 +840,6 @@ const UI = {
     html += '<div class="text-xs text-muted mb-3">预计返还: <span id="demolish-refund" class="text-accent">$0</span></div>';
 
     html += '<div class="flex gap-2 justify-end">' +
-      '<button onclick="UI.hideModal()" class="modal-btn">取消</button>' +
       '<button id="confirm-demolish" class="modal-btn danger">确认拆除</button>' +
       '</div>';
 
@@ -941,7 +903,6 @@ const UI = {
       '</div>';
     html += '<div class="text-xs text-muted mb-3">预计花费: <span id="power-cost" class="text-accent">$250M</span></div>';
     html += '<div class="flex gap-2 justify-end">' +
-      '<button onclick="UI.hideModal()" class="modal-btn">取消</button>' +
       '<button id="confirm-power" class="modal-btn primary">确认扩容</button>' +
       '</div>';
     return html;
@@ -973,7 +934,6 @@ const UI = {
       '</div>';
     html += '<div class="text-xs text-muted mb-3">预计花费: <span id="cooling-cost" class="text-accent">$40M</span></div>';
     html += '<div class="flex gap-2 justify-end">' +
-      '<button onclick="UI.hideModal()" class="modal-btn">取消</button>' +
       '<button id="confirm-cooling" class="modal-btn primary">确认扩容</button>' +
       '</div>';
     return html;
@@ -997,31 +957,28 @@ const UI = {
   buildExpandDatacenterModal() {
     const s = Game.state;
     const nextCost = CONFIG.DATACENTER_EXPAND_BASE_COST * Math.pow(CONFIG.DATACENTER_EXPAND_EXPONENT, s.datacenterExpands);
-    const currentRows = Datacenter.ROWS;
-    const currentCols = Datacenter.COLS;
+    const currentFloors = Datacenter.FLOORS;
+    const currentSlots = Datacenter.getTotalSlots();
     const preview = Datacenter.getExpansionPreview();
-    const currentSlots = preview.currentSlots;
-    const newRows = preview.rows;
-    const newCols = preview.cols;
+    const newFloors = preview.floors;
     const newSlots = preview.slots;
 
-    let html = '<h2 class="text-lg font-bold text-accent mb-3">扩容数据中心</h2>';
-    html += '<div class="text-xs text-muted mb-2">模块化扩建：每次增加 ' + CONFIG.DATACENTER_EXPAND_ROWS + ' 行 × ' + CONFIG.DATACENTER_EXPAND_COLS + ' 列；新增容量会随现有规模增长，费用逐次递增</div>';
+    let html = '<h2 class="text-lg font-bold text-accent mb-3">加盖楼层</h2>';
+    html += '<div class="text-xs text-muted mb-2">往上加盖一层，每层固定 ' + CONFIG.DATACENTER_SLOTS_PER_FLOOR + ' 个机架位（' + CONFIG.DATACENTER_FLOOR_ROWS + '×' + CONFIG.DATACENTER_FLOOR_COLS + '）；费用逐层递增</div>';
     html += '<div class="bg-[#111118] rounded p-3 mb-3 text-xs">';
     html += '<div class="grid grid-cols-2 gap-1">';
-    html += '<span class="text-muted">当前规模</span><span class="font-mono">' + currentRows + ' x ' + currentCols + ' (' + currentSlots + ' 机架)</span>';
-    html += '<span class="text-muted">扩容后</span><span class="font-mono text-accent">' + newRows + ' x ' + newCols + ' (' + newSlots + ' 机架)</span>';
+    html += '<span class="text-muted">当前楼层</span><span class="font-mono">' + currentFloors + ' 层 (' + currentSlots + ' 机架)</span>';
+    html += '<span class="text-muted">加盖后</span><span class="font-mono text-accent">' + newFloors + ' 层 (' + newSlots + ' 机架)</span>';
     html += '<span class="text-muted">本次新增</span><span class="font-mono text-accent">+' + preview.addedSlots + ' 个 GPU 位</span>';
-    html += '<span class="text-muted">已扩容次数</span><span class="font-mono">' + s.datacenterExpands + ' 次</span>';
+    html += '<span class="text-muted">已加盖次数</span><span class="font-mono">' + s.datacenterExpands + ' 次</span>';
     html += '</div></div>';
-    html += '<div class="text-sm mb-3">本次扩容费用: <span id="datacenter-cost" class="text-accent font-bold">$' + Economy.formatMoney(nextCost) + '</span></div>';
+    html += '<div class="text-sm mb-3">本次加盖费用: <span id="datacenter-cost" class="text-accent font-bold">$' + Economy.formatMoney(nextCost) + '</span></div>';
     if (s.cash < nextCost) {
       html += '<div class="text-danger text-xs mb-3">资金不足! 还差 $' + Economy.formatMoney(nextCost - s.cash) + '</div>';
     }
-    html += '<div class="text-xs text-muted mb-3">下次扩容费用: $' + Economy.formatMoney(CONFIG.DATACENTER_EXPAND_BASE_COST * Math.pow(CONFIG.DATACENTER_EXPAND_EXPONENT, s.datacenterExpands + 1)) + '</div>';
+    html += '<div class="text-xs text-muted mb-3">下次加盖费用: $' + Economy.formatMoney(CONFIG.DATACENTER_EXPAND_BASE_COST * Math.pow(CONFIG.DATACENTER_EXPAND_EXPONENT, s.datacenterExpands + 1)) + '</div>';
     html += '<div class="flex gap-2 justify-end">' +
-      '<button onclick="UI.hideModal()" class="modal-btn">取消</button>' +
-      '<button id="confirm-expand-dc" class="modal-btn primary" ' + (s.cash < nextCost ? 'disabled' : '') + '>确认扩容</button>' +
+      '<button id="confirm-expand-dc" class="modal-btn primary" ' + (s.cash < nextCost ? 'disabled' : '') + '>确认加盖</button>' +
       '</div>';
     return html;
   },
@@ -1101,7 +1058,6 @@ const UI = {
     html += '<div class="text-xs text-muted mb-3">预计花费: <span id="data-cost" class="text-accent">$0</span></div>';
 
     html += '<div class="flex gap-2 justify-end">' +
-      '<button onclick="UI.hideModal()" class="modal-btn">关闭</button>' +
       '<button id="confirm-collect" class="modal-btn primary">确认采集</button>' +
       '</div>';
 
@@ -1181,7 +1137,7 @@ const UI = {
       '<span class="absolute left-0">1B</span>' +
       '<span class="absolute -translate-x-1/2" style="left:25%">500B</span>' +
       '<span class="absolute -translate-x-1/2" style="left:50%">1T</span>' +
-      '<span class="absolute right-0">2T</span>' +
+      '<span class="absolute right-0">3TB</span>' +
       '</div>' +
       '<div id="train-params-info" class="text-xs text-muted mt-1">参数 70B | 训练数据 1.4T tokens | 最少推理 14 GPU</div>' +
       '</div>';
@@ -1247,7 +1203,6 @@ const UI = {
       '</div></div>';
 
     html += '<div class="flex gap-2 justify-end">' +
-      '<button onclick="UI.hideModal()" class="modal-btn">取消</button>' +
       '<button id="confirm-train" class="modal-btn primary">开始训练</button>' +
       '</div>';
 
@@ -1409,10 +1364,6 @@ const UI = {
         '</div>';
     }
 
-    html += '<div class="flex gap-2 justify-end mt-3">' +
-      '<button onclick="UI.hideModal()" class="modal-btn">关闭</button>' +
-      '</div>';
-
     return html;
   },
 
@@ -1439,10 +1390,18 @@ const UI = {
   buildResearchModal() {
     let html = '<h2 class="text-lg font-bold text-accent mb-3">研发技术</h2>';
     const levelInfo = Research.getLevelInfo();
-    html += '<div class="border border-border rounded p-2 mb-3 text-xs"><div class="flex justify-between"><span>研发等级 <span class="text-accent font-bold">Lv.' + levelInfo.level + ' · ' + levelInfo.name + '</span></span><span class="text-muted">已完成 ' + levelInfo.completed + ' 项</span></div>' +
-      (levelInfo.next ? '<div class="text-muted mt-1">升级至 Lv.' + (levelInfo.level + 1) + '：还需完成 ' + Math.max(0, levelInfo.next.requiredCompleted - levelInfo.completed) + ' 项技术</div>' : '<div class="text-accent mt-1">已达到最高研发等级</div>') + '</div>';
+    const tierTechs = { 1: [], 2: [], 3: [], 4: [], 5: [] };
+    for (const [key, tech] of Object.entries(CONFIG.TECH_RESEARCH)) {
+      const tier = tech.tier || 1;
+      if (tierTechs[tier]) tierTechs[tier].push(key);
+    }
+    const currentTierTechs = tierTechs[levelInfo.level] || [];
+    const currentUnlocked = currentTierTechs.filter(k => Research.isUnlocked(k)).length;
+
+    html += '<div class="border border-border rounded p-2 mb-3 text-xs"><div class="flex justify-between"><span>研发层级 <span class="text-accent font-bold">Tier ' + levelInfo.level + ' · ' + levelInfo.name + '</span></span><span class="text-muted">已完成 ' + levelInfo.completed + ' 项</span></div>' +
+      (levelInfo.next ? '<div class="text-muted mt-1">升级至 ' + levelInfo.next.name + '：需解锁全部当前层级技术（' + currentUnlocked + '/' + currentTierTechs.length + '）</div>' : '<div class="text-accent mt-1">已达到最高研发层级</div>') + '</div>';
     const techStatus = Research.getTechStatus();
-    const tiers = { 1: [], 2: [], 3: [], 4: [] };
+    const tiers = { 1: [], 2: [], 3: [], 4: [], 5: [] };
 
     for (const [key, tech] of Object.entries(techStatus)) {
       const tier = tech.tier || 1;
@@ -1450,11 +1409,14 @@ const UI = {
       tiers[tier].push({ key, ...tech });
     }
 
-    for (let tier = 1; tier <= 4; tier++) {
+    for (let tier = 1; tier <= 5; tier++) {
       const level = CONFIG.RESEARCH_LEVELS[tier];
-      html += '<div class="mb-3"><div class="text-xs text-muted uppercase mb-1">Tier ' + tier + ' · ' + level.name + '（完成 ' + level.requiredCompleted + ' 项解锁）</div>';
+      if (!level) continue;
+      const tierList = tierTechs[tier] || [];
+      const tierUnlocked = tierList.filter(k => Research.isUnlocked(k)).length;
+      html += '<div class="mb-3"><div class="text-xs text-muted uppercase mb-1">Tier ' + tier + ' · ' + level.name + '（解锁 ' + tierUnlocked + '/' + tierList.length + ' 项）</div>';
       html += '<div class="grid grid-cols-2 gap-1">';
-      for (const tech of tiers[tier]) {
+      for (const tech of (tiers[tier] || [])) {
         const status = tech.status;
         let badge = '';
         let clickable = '';
@@ -1509,10 +1471,6 @@ const UI = {
       html += '</div>';
     }
 
-    html += '<div class="flex gap-2 justify-end mt-3">' +
-      '<button onclick="UI.hideModal()" class="modal-btn">关闭</button>' +
-      '</div>';
-
     return html;
   },
 
@@ -1521,7 +1479,9 @@ const UI = {
       el.addEventListener('click', () => {
         const key = el.dataset.tech;
         if (Research.startResearch(key)) {
-          UI.hideModal();
+          // 不关闭窗口，刷新模态框内容
+          document.getElementById('modal-content').innerHTML = UI.buildResearchModal();
+          UI.bindResearchEvents();
         }
       });
     });

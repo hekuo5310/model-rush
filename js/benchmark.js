@@ -1,29 +1,57 @@
 // Model Rush - Benchmark 评分系统
+// 作者：mukunjin
+// 仓库：https://github.com/mukunjin/model-rush
 const Benchmark = {
   // 技术对特定基准类别的影响（小幅加成，不让分数膨胀）
   CATEGORY_TECH_BONUSES: {
-    moe:             { reasoning: 0.05, coding: 0.05 },
-    distillation:    { comprehension: 0.05 },
-    constitutional:  { safety: 0.10 },
-    gqa:             { long_context: 0.05 },
-    mtp:             { reasoning: 0.03, multilingual: 0.03 },
-    qat:             { reasoning: 0.03, coding: 0.03, comprehension: 0.03, multilingual: 0.03, safety: 0.03, long_context: 0.03 },
-    sparse_attention:{ comprehension: -0.03 },
-    swiglu:          { reasoning: 0.02, coding: 0.02, comprehension: 0.02 },
-    grpo:            { reasoning: 0.05, coding: 0.03 },
-    kv_cache:        { long_context: 0.03 },
+    // Tier 1 基础技术
+    flash_attention: { reasoning: 0.03, coding: 0.03 },
+    mixed_precision: { reasoning: 0.02, coding: 0.02, comprehension: 0.02 },
     rope:            { long_context: 0.04, multilingual: 0.02 },
-    ring_attention:  { long_context: 0.05 },
-    rlaif:           { safety: 0.04 },
     data_dedup:      { comprehension: 0.02, multilingual: 0.02 },
+    curriculum:      { reasoning: 0.03, comprehension: 0.02 },
+    seq_packing:     { coding: 0.02, comprehension: 0.02 },
+    swiglu:          { reasoning: 0.02, coding: 0.02, comprehension: 0.02 },
+    rmsnorm:         { reasoning: 0.01, coding: 0.01 },
+    // Tier 2 进阶技术
+    gqa:             { long_context: 0.05 },
+    zero3:           { reasoning: 0.02, coding: 0.02 },
+    ring_attention:  { long_context: 0.05 },
+    sparse_attention:{ comprehension: -0.03 },
+    lora:            { coding: 0.03, comprehension: 0.02 },
+    distillation:    { comprehension: 0.05 },
+    rlaif:           { safety: 0.04 },
+    grad_checkpoint: { coding: 0.01 },
+    kv_cache:        { long_context: 0.03 },
+    // Tier 3 高级技术
+    moe:             { reasoning: 0.05, coding: 0.05 },
+    mtp:             { reasoning: 0.03, multilingual: 0.03 },
+    parallel3d:      { reasoning: 0.03, coding: 0.03 },
+    grpo:            { reasoning: 0.05, coding: 0.03 },
+    constitutional:  { safety: 0.10 },
+    qat:             { reasoning: 0.03, coding: 0.03, comprehension: 0.03, multilingual: 0.03, safety: 0.03, long_context: 0.03 },
+    speculative:     { coding: 0.02 },
+    // Tier 4 前沿技术
+    fp8_training:    { reasoning: 0.02, coding: 0.02 },
+    fsdp2:           { reasoning: 0.01, coding: 0.01 },
     tokenizer_opt:   { comprehension: 0.03, multilingual: 0.05 },
     synthetic_curriculum: { reasoning: 0.06, coding: 0.02 },
-    fsdp2:           { reasoning: 0.01, coding: 0.01 },
+    continuous_batching: { coding: 0.02 },
+    open_source_ecosystem: { comprehension: 0.02 },
+    expert_parallel: { reasoning: 0.03, coding: 0.03 },
+    kernel_fusion:   { coding: 0.02 },
     retrieval_pretraining: { reasoning: 0.04, comprehension: 0.05 },
     context_compression: { long_context: 0.07, comprehension: 0.02 },
     preference_optimization: { reasoning: 0.04, safety: 0.06 },
     tool_use_training: { reasoning: 0.06, coding: 0.07 },
-    privacy_preserving_data: { safety: 0.05 }
+    smooth_quantization: { coding: 0.01 },
+    privacy_preserving_data: { safety: 0.05 },
+    // Tier 5 突破性技术
+    liquid_cooling:  { reasoning: 0.02, coding: 0.02 },
+    neuromorphic:    { reasoning: 0.04, coding: 0.03, comprehension: 0.03 },
+    quantum_ml:      { reasoning: 0.08, coding: 0.05 },
+    agi_alignment:   { safety: 0.12, comprehension: 0.03 },
+    self_improving:  { reasoning: 0.06, coding: 0.06, comprehension: 0.06, multilingual: 0.06, safety: 0.06, long_context: 0.06 }
   },
 
   evaluate(training) {
@@ -31,7 +59,7 @@ const Benchmark = {
     const params = training.params || (CONFIG.MODEL_SCALES[training.scale] ? CONFIG.MODEL_SCALES[training.scale].params : 70e9);
     const logParams = Math.log10(params);
 
-    // 通用质量加成（来自数据采集质量、技术和对齐方法，上限1.30）
+    // 通用质量加成（来自数据采集质量、技术和对齐方法，上限 1.55）
     let generalQuality = 1.0 + (training.dataQualityScoreMod || 0);
     for (const techKey of (training.selectedTechs || [])) {
       const tech = CONFIG.TECH_RESEARCH[techKey];
@@ -44,7 +72,7 @@ const Benchmark = {
     } else if (training.alignmentMethod === 'dpo') {
       generalQuality += CONFIG.ALIGNMENT_METHODS.dpo.qualityBonus;
     }
-    generalQuality = Math.min(generalQuality, 1.30);
+    generalQuality = Math.min(generalQuality, 1.55);
 
     const breakdown = {};
     const benchmarks = CONFIG.BENCHMARKS;
@@ -58,8 +86,8 @@ const Benchmark = {
     const uniformShare = 1 / Object.keys(benchmarks).length; // 均匀分布基准值
 
     for (const [key, bm] of Object.entries(benchmarks)) {
-      // 基础分（每个类别）：模型越大基础分越高，但增长放缓
-      let catScore = 20 + Math.max(0, logParams - 9) * 7;
+      // 基础分：模型越大基础分越高，使用对数衰减避免线性膨胀
+      let catScore = 18 + Math.max(0, logParams - 9) * 5.5;
 
       // 应用通用质量加成
       catScore *= generalQuality;

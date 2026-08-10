@@ -1,4 +1,6 @@
 // Model Rush - 经济系统
+// 作者：mukunjin
+// 仓库：https://github.com/mukunjin/model-rush
 const Economy = {
   settleDaily() {
     const s = Game.state;
@@ -162,11 +164,13 @@ const Economy = {
 
     // 检查数据中心机架位容量（防止出现"隐形GPU"：库存有但3D无法放置）
     let canPlace = 0;
-    for (let row = 0; row < Datacenter.ROWS; row++) {
-      for (let col = 0; col < Datacenter.COLS; col++) {
-        if (Datacenter.gpuBlocks.some(b => b.row === row && b.col === col)) continue;
-        if (Datacenter.isPositionBlocked(col, row)) continue;
-        canPlace++;
+    for (let floor = 0; floor < Datacenter.FLOORS; floor++) {
+      for (let row = 0; row < Datacenter.ROWS; row++) {
+        for (let col = 0; col < Datacenter.COLS; col++) {
+          if (Datacenter.gpuBlocks.some(b => b.row === row && b.col === col && b.floor === floor)) continue;
+          if (Datacenter.isPositionBlocked(col, row)) continue;
+          canPlace++;
+        }
       }
     }
     if (gpuCount > canPlace) {
@@ -303,7 +307,7 @@ const Economy = {
     s.cash -= cost;
     s.datacenterExpands++;
     const expansion = Datacenter.expand();
-    Game.addLog('数据中心扩容 Lv.' + s.datacenterExpands + '：新增 ' + expansion.addedSlots + ' 个 GPU 位，花费 $' + Economy.formatMoney(cost));
+    Game.addLog('加盖第 ' + Datacenter.FLOORS + ' 层：新增 ' + expansion.addedSlots + ' 个 GPU 位（总计 ' + expansion.totalSlots + ' 位），花费 $' + Economy.formatMoney(cost));
     UI.update();
     return true;
   }

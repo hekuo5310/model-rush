@@ -1,6 +1,8 @@
 // Model Rush - 3D 数据中心渲染
+// 作者：mukunjin
+// 仓库：https://github.com/mukunjin/model-rush
 const Datacenter = {
-  gpuBlocks: [], // {mesh, type, row, col, training}
+  gpuBlocks: [], // {group, blades, type, row, col, floor, training}
   gpuPickables: [],
   gpuPickablesDirty: true,
   rackAssets: null,
@@ -14,8 +16,11 @@ const Datacenter = {
   RACK_SIZE: 0.35,
   RACK_HEIGHT: 0.55,
   RACK_GAP: 0.12,
-  ROWS: 10,
+  ROWS: 20,
   COLS: 20,
+  FLOORS: 1,
+  FLOOR_HEIGHT: 0.9,
+  SLOTS_PER_FLOOR: 400,
   POWER_POS: { x: -8, z: 8 },
   COOLING_POS: { x: -8, z: -3 },
 
@@ -56,42 +61,53 @@ const Datacenter = {
   createPlatform() {
     const { w, d } = this.getPlatformSize();
 
-    // 数据中心高架地板
-    const floorGeo = new THREE.BoxGeometry(w, 0.12, d);
-    const floorMat = new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.7, metalness: 0.2 });
-    this.floorMesh = new THREE.Mesh(floorGeo, floorMat);
-    this.floorMesh.position.y = 0.06;
-    this.floorMesh.receiveShadow = true;
-    this.floorMesh.castShadow = true;
-    Scene.scene.add(this.floorMesh);
-
-    // 平台边框
-    const edgeMat = new THREE.MeshStandardMaterial({ color: 0x2a2a3a, roughness: 0.4, metalness: 0.6 });
-    const edgeThickness = 0.06;
-    const edgeHeight = 0.15;
-    const edges = [
-      { x: 0, z: -d/2, w: w, d: edgeThickness },  // 前
-      { x: 0, z: d/2, w: w, d: edgeThickness },   // 后
-      { x: -w/2, z: 0, w: edgeThickness, d: d },  // 左
-      { x: w/2, z: 0, w: edgeThickness, d: d }    // 右
-    ];
+    // 为每层创建底板
+    this.floorMeshes = [];
     this.edgeMeshes = [];
-    for (const e of edges) {
-      const edgeGeo = new THREE.BoxGeometry(e.w, edgeHeight, e.d);
-      const edge = new THREE.Mesh(edgeGeo, edgeMat);
-      edge.position.set(e.x, 0.13, e.z);
-      edge.castShadow = true;
-      edge.receiveShadow = true;
-      Scene.scene.add(edge);
-      this.edgeMeshes.push(edge);
+    this.gridHelpers = [];
+    for (let f = 0; f < this.FLOORS; f++) {
+      const yBase = f * this.FLOOR_HEIGHT;
+
+      // 数据中心高架地板
+      const floorGeo = new THREE.BoxGeometry(w, 0.12, d);
+      const floorMat = new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.7, metalness: 0.2 });
+      const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+      floorMesh.position.y = yBase + 0.06;
+      floorMesh.receiveShadow = true;
+      floorMesh.castShadow = true;
+      Scene.scene.add(floorMesh);
+      this.floorMeshes.push(floorMesh);
+
+      // 平台边框
+      const edgeMat = new THREE.MeshStandardMaterial({ color: 0x2a2a3a, roughness: 0.4, metalness: 0.6 });
+      const edgeThickness = 0.06;
+      const edgeHeight = 0.15;
+      const edges = [
+        { x: 0, z: -d/2, w: w, d: edgeThickness },
+        { x: 0, z: d/2, w: w, d: edgeThickness },
+        { x: -w/2, z: 0, w: edgeThickness, d: d },
+        { x: w/2, z: 0, w: edgeThickness, d: d }
+      ];
+      const floorEdges = [];
+      for (const e of edges) {
+        const edgeGeo = new THREE.BoxGeometry(e.w, edgeHeight, e.d);
+        const edge = new THREE.Mesh(edgeGeo, edgeMat);
+        edge.position.set(e.x, yBase + 0.13, e.z);
+        edge.castShadow = true;
+        edge.receiveShadow = true;
+        Scene.scene.add(edge);
+        floorEdges.push(edge);
+      }
+      this.edgeMeshes.push(floorEdges);
+
+      // 网格线
+      const gridHelper = new THREE.GridHelper(Math.max(w, d), Math.max(this.COLS, this.ROWS), 0x2a2a3a, 0x1a1a2e);
+      gridHelper.position.y = yBase + 0.13;
+      Scene.scene.add(gridHelper);
+      this.gridHelpers.push(gridHelper);
     }
 
-    // 网格线（仅平台区域）
-    this.gridHelper = new THREE.GridHelper(Math.max(w, d), Math.max(this.COLS, this.ROWS), 0x2a2a3a, 0x1a1a2e);
-    this.gridHelper.position.y = 0.13;
-    Scene.scene.add(this.gridHelper);
-
-    // 半透明机房
+    // 半透明机房（覆盖全部楼层）
     this.createBuilding();
   },
 
@@ -106,7 +122,7 @@ const Datacenter = {
     }
 
     const { w, d } = this.getPlatformSize();
-    const buildingH = 0.8;
+    const buildingH = this.FLOORS * this.FLOOR_HEIGHT;
     const group = new THREE.Group();
 
     // 玻璃材质
@@ -125,10 +141,10 @@ const Datacenter = {
     // 四面玻璃墙
     const wallThickness = 0.015;
     const walls = [
-      { x: 0, z: -d/2, w: w, d: wallThickness },           // 前
-      { x: 0, z: d/2, w: w, d: wallThickness },            // 后
-      { x: -w/2, z: 0, w: wallThickness, d: d },           // 左
-      { x: w/2, z: 0, w: wallThickness, d: d }             // 右
+      { x: 0, z: -d/2, w: w, d: wallThickness },
+      { x: 0, z: d/2, w: w, d: wallThickness },
+      { x: -w/2, z: 0, w: wallThickness, d: d },
+      { x: w/2, z: 0, w: wallThickness, d: d }
     ];
     for (const wall of walls) {
       const wallGeo = new THREE.BoxGeometry(wall.w, buildingH, wall.d);
@@ -174,6 +190,25 @@ const Datacenter = {
       group.add(pillar);
     }
 
+    // 楼层间横梁
+    for (let f = 1; f < this.FLOORS; f++) {
+      const fy = f * this.FLOOR_HEIGHT + 0.12;
+      const fbeamGeo = new THREE.BoxGeometry(w + 0.04, 0.02, 0.04);
+      for (let zz = -1; zz <= 1; zz += 2) {
+        const fbeam = new THREE.Mesh(fbeamGeo, structMat);
+        fbeam.position.set(0, fy, zz * d/2);
+        fbeam.castShadow = true;
+        group.add(fbeam);
+      }
+      const fbeamGeoZ = new THREE.BoxGeometry(0.04, 0.02, d + 0.04);
+      for (let xx = -1; xx <= 1; xx += 2) {
+        const fbeam = new THREE.Mesh(fbeamGeoZ, structMat);
+        fbeam.position.set(xx * w/2, fy, 0);
+        fbeam.castShadow = true;
+        group.add(fbeam);
+      }
+    }
+
     // 前门框
     const doorFrameGeo = new THREE.BoxGeometry(w * 0.15, buildingH * 0.6, 0.03);
     const doorFrame = new THREE.Mesh(doorFrameGeo, structMat);
@@ -187,17 +222,23 @@ const Datacenter = {
 
   updatePlatform() {
     // 移除旧平台
-    if (this.floorMesh) {
-      Scene.scene.remove(this.floorMesh);
-      this.floorMesh.geometry.dispose();
+    if (this.floorMeshes) {
+      for (const fm of this.floorMeshes) {
+        Scene.scene.remove(fm);
+        fm.geometry.dispose();
+      }
     }
-    if (this.gridHelper) {
-      Scene.scene.remove(this.gridHelper);
+    if (this.gridHelpers) {
+      for (const gh of this.gridHelpers) {
+        Scene.scene.remove(gh);
+      }
     }
     if (this.edgeMeshes) {
-      for (const e of this.edgeMeshes) {
-        Scene.scene.remove(e);
-        e.geometry.dispose();
+      for (const floorEdges of this.edgeMeshes) {
+        for (const e of floorEdges) {
+          Scene.scene.remove(e);
+          e.geometry.dispose();
+        }
       }
     }
     this.createPlatform();
@@ -461,22 +502,24 @@ const Datacenter = {
   },
 
   expand() {
-    const before = this.ROWS * this.COLS;
-    this.ROWS += CONFIG.DATACENTER_EXPAND_ROWS;
-    this.COLS += CONFIG.DATACENTER_EXPAND_COLS;
+    const before = this.getTotalSlots();
+    this.FLOORS++;
     this.updatePlatform();
     this.updateGround();
-    const added = this.ROWS * this.COLS - before;
-    Game.addLog('数据中心已扩容至 ' + this.ROWS + 'x' + this.COLS + '（新增 ' + added + ' 个 GPU 位）');
-    return { addedSlots: added, rows: this.ROWS, cols: this.COLS };
+    const added = this.getTotalSlots() - before;
+    Game.addLog('数据中心加盖第 ' + this.FLOORS + ' 层（新增 ' + added + ' 个 GPU 位，总计 ' + this.getTotalSlots() + ' 位）');
+    return { addedSlots: added, floors: this.FLOORS, totalSlots: this.getTotalSlots() };
+  },
+
+  getTotalSlots() {
+    return this.ROWS * this.COLS * this.FLOORS;
   },
 
   getExpansionPreview() {
-    const currentSlots = this.ROWS * this.COLS;
-    const rows = this.ROWS + CONFIG.DATACENTER_EXPAND_ROWS;
-    const cols = this.COLS + CONFIG.DATACENTER_EXPAND_COLS;
-    const slots = rows * cols;
-    return { rows, cols, currentSlots, slots, addedSlots: slots - currentSlots };
+    const currentSlots = this.getTotalSlots();
+    const floors = this.FLOORS + 1;
+    const slots = this.ROWS * this.COLS * floors;
+    return { floors, currentSlots, slots, addedSlots: slots - currentSlots };
   },
 
   updateGround() {
@@ -533,7 +576,7 @@ const Datacenter = {
 
   addGPUs(gpuType, count) {
     const typeConfig = CONFIG.GPUS[gpuType];
-    const maxCapacity = this.ROWS * this.COLS;
+    const maxCapacity = this.getTotalSlots();
 
     // 已占用数量
     const occupied = this.gpuBlocks.length;
@@ -545,30 +588,34 @@ const Datacenter = {
     }
 
     let added = 0;
-    for (let row = 0; row < this.ROWS && added < toAdd; row++) {
-      for (let col = 0; col < this.COLS && added < toAdd; col++) {
-        const occupiedPos = this.gpuBlocks.some(b => b.row === row && b.col === col);
-        if (occupiedPos) continue;
-        if (this.isPositionBlocked(col, row)) continue;
+    for (let floor = 0; floor < this.FLOORS && added < toAdd; floor++) {
+      for (let row = 0; row < this.ROWS && added < toAdd; row++) {
+        for (let col = 0; col < this.COLS && added < toAdd; col++) {
+          const occupiedPos = this.gpuBlocks.some(b => b.row === row && b.col === col && b.floor === floor);
+          if (occupiedPos) continue;
+          if (this.isPositionBlocked(col, row)) continue;
 
-        const x = this.getX(col);
-        const z = this.getZ(row);
+          const x = this.getX(col);
+          const z = this.getZ(row);
+          const y = this.getY(floor);
 
-        const rack = this.createRack(gpuType);
-        rack.group.position.set(x, 0, z);
-        Scene.scene.add(rack.group);
+          const rack = this.createRack(gpuType);
+          rack.group.position.set(x, y, z);
+          Scene.scene.add(rack.group);
 
-        this.gpuBlocks.push({
-          blades: rack.blades,
-          group: rack.group,
-          type: gpuType,
-          row,
-          col,
-          training: false
-        });
-        this.gpuPickablesDirty = true;
+          this.gpuBlocks.push({
+            blades: rack.blades,
+            group: rack.group,
+            type: gpuType,
+            row,
+            col,
+            floor,
+            training: false
+          });
+          this.gpuPickablesDirty = true;
 
-        added++;
+          added++;
+        }
       }
     }
   },
@@ -658,6 +705,10 @@ const Datacenter = {
     return (row - this.ROWS / 2 + 0.5) * (this.RACK_SIZE + this.RACK_GAP);
   },
 
+  getY(floor) {
+    return floor * this.FLOOR_HEIGHT;
+  },
+
   // 从存档重建GPU方块（加载存档时使用）
   rebuildGPUBlocks(blockData) {
     // 清除现有GPU
@@ -669,24 +720,25 @@ const Datacenter = {
     this.gpuPickablesDirty = true;
     // 重建
     for (const bd of blockData) {
-      this.addOneGPUBlock(bd.type, bd.row, bd.col, bd.training);
+      this.addOneGPUBlock(bd.type, bd.row, bd.col, bd.floor || 0, bd.training);
     }
   },
 
   // 添加单个GPU机架（不更新库存，用于存档恢复，使用与正常购买一致的紧凑建模）
-  addOneGPUBlock(gpuType, row, col, training) {
+  addOneGPUBlock(gpuType, row, col, floor, training) {
     const x = this.getX(col);
     const z = this.getZ(row);
+    const y = this.getY(floor);
 
     const rack = this.createRack(gpuType);
-    rack.group.position.set(x, 0, z);
+    rack.group.position.set(x, y, z);
     if (training) {
       for (const blade of rack.blades) {
         blade.material.emissiveIntensity = 0.5;
       }
     }
     Scene.scene.add(rack.group);
-    this.gpuBlocks.push({ group: rack.group, blades: rack.blades, type: gpuType, row, col, training });
+    this.gpuBlocks.push({ group: rack.group, blades: rack.blades, type: gpuType, row, col, floor, training });
     this.gpuPickablesDirty = true;
   }
 };

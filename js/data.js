@@ -1,4 +1,6 @@
 // Model Rush - 数据采集与处理系统
+// 作者：mukunjin
+// 仓库：https://github.com/mukunjin/model-rush
 const DataCollection = {
   // state: { sources: { web_crawl: 0, books: 0, ... }, collected: false, totalTokens: 0, avgQuality: 0 }
   state: { sources: {}, collected: false, totalTokens: 0, avgQuality: 0 },

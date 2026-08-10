@@ -1,4 +1,6 @@
 // Model Rush - 游戏配置常量
+// 作者：mukunjin
+// 仓库：https://github.com/mukunjin/model-rush
 const CONFIG = {
   // 初始资金（大幅降低，从零开始）
   INITIAL_CASH: 150_000_000, // 1.5亿美金
@@ -15,11 +17,12 @@ const CONFIG = {
   INITIAL_COOLING_CAPACITY_MW: 1.5,
   COOLING_EXPAND_COST_PER_MW: 20_000_000,
 
-  // 数据中心扩容：模块化扩建；容量会随机房边界同步增长，成本保持渐进压力。
+  // 数据中心扩容：往上加一层，每层固定 400 个机架位，成本逐层递增。
   DATACENTER_EXPAND_BASE_COST: 75_000_000,
   DATACENTER_EXPAND_EXPONENT: 1.25,
-  DATACENTER_EXPAND_ROWS: 5,
-  DATACENTER_EXPAND_COLS: 10,
+  DATACENTER_SLOTS_PER_FLOOR: 400,
+  DATACENTER_FLOOR_ROWS: 20,
+  DATACENTER_FLOOR_COLS: 20,
   GPU_MAX_PER_TYPE: 2000,
 
   // 员工薪资（每月）
@@ -31,13 +34,18 @@ const CONFIG = {
   GPUS: {
     A100:   { name: 'A100 80GB', arch: 'Ampere', tflops: 312, vram: 80, vram_type: 'HBM2e', bw: 2.0, power: 400, price: 15000, color: 0x7f8c8d, unlockValuation: 0 },
     H100:   { name: 'H100', arch: 'Hopper', tflops: 990, vram: 80, vram_type: 'HBM3', bw: 3.35, power: 700, price: 30000, color: 0x00cc66, unlockValuation: 200_000_000 },
+    H800:   { name: 'H800', arch: 'Hopper', tflops: 750, vram: 80, vram_type: 'HBM3', bw: 2.0, power: 700, price: 35000, color: 0x00aa55, unlockValuation: 300_000_000 },
+    MI300X: { name: 'MI300X', arch: 'CDNA3', tflops: 1307, vram: 192, vram_type: 'HBM3', bw: 5.3, power: 750, price: 20000, color: 0xce3b3b, unlockValuation: 300_000_000 },
+    L40S:   { name: 'L40S', arch: 'Ada Lovelace', tflops: 733, vram: 48, vram_type: 'GDDR6', bw: 0.86, power: 350, price: 12000, color: 0x4488cc, unlockValuation: 150_000_000 },
     H200:   { name: 'H200', arch: 'Hopper', tflops: 2000, vram: 141, vram_type: 'HBM3e', bw: 4.8, power: 700, price: 45000, color: 0xe6a817, unlockValuation: 500_000_000 },
+    MI325X: { name: 'MI325X', arch: 'CDNA3', tflops: 1630, vram: 256, vram_type: 'HBM3e', bw: 6.0, power: 750, price: 28000, color: 0xd32f2f, unlockValuation: 800_000_000 },
+    Gaudi3: { name: 'Gaudi 3', arch: 'Gaudi', tflops: 1835, vram: 128, vram_type: 'HBM2e', bw: 3.7, power: 900, price: 35000, color: 0x9966ff, unlockValuation: 600_000_000 },
     B200:   { name: 'B200', arch: 'Blackwell', tflops: 2250, vram: 192, vram_type: 'HBM3e', bw: 8.0, power: 1000, price: 55000, color: 0xe74c3c, unlockValuation: 1_000_000_000 },
     B300:   { name: 'B300', arch: 'Blackwell Ultra', tflops: 2500, vram: 288, vram_type: 'HBM3e', bw: 8.0, power: 1400, price: 70000, color: 0xff5722, unlockValuation: 2_000_000_000 },
+    MI355X: { name: 'MI355X', arch: 'CDNA4', tflops: 3000, vram: 288, vram_type: 'HBM3e', bw: 8.0, power: 1000, price: 60000, color: 0xb71c1c, unlockValuation: 3_000_000_000 },
     GB300:  { name: 'GB300 NVL72', arch: 'Blackwell Ultra', tflops: 3750, vram: 288, vram_type: 'HBM3e', bw: 13.5, power: 1800, price: 90000, color: 0xff6d00, unlockValuation: 5_000_000_000 },
-    MI300X: { name: 'MI300X', arch: 'CDNA3', tflops: 1307, vram: 192, vram_type: 'HBM3', bw: 5.3, power: 750, price: 20000, color: 0xce3b3b, unlockValuation: 300_000_000 },
-    MI325X: { name: 'MI325X', arch: 'CDNA3', tflops: 1630, vram: 256, vram_type: 'HBM3e', bw: 6.0, power: 750, price: 28000, color: 0xd32f2f, unlockValuation: 800_000_000 },
-    Rubin:  { name: 'Rubin', arch: 'Rubin', tflops: 6250, vram: 288, vram_type: 'HBM4', bw: 22.0, power: 1800, price: 100000, color: 0xffeaa7, unlockValuation: 10_000_000_000 }
+    Rubin:  { name: 'Rubin', arch: 'Rubin', tflops: 6250, vram: 288, vram_type: 'HBM4', bw: 22.0, power: 1800, price: 100000, color: 0xffeaa7, unlockValuation: 10_000_000_000 },
+    Vera:   { name: 'Vera Rubin', arch: 'Vera', tflops: 15000, vram: 512, vram_type: 'HBM4', bw: 30.0, power: 2500, price: 180000, color: 0xffffff, unlockValuation: 25_000_000_000 }
   },
 
   BASE_EFFICIENCY: 0.35,
@@ -56,7 +64,7 @@ const CONFIG = {
 
   // 参数范围（自由滑动条）
   PARAMS_MIN_B: 1,     // 最小 1B
-  PARAMS_MAX_B: 2000,  // 最大 2000B (2T)
+  PARAMS_MAX_B: 3000,  // 最大 3000B (3T)
   CHINCHILLA_RATIO: 20, // 训练tokens = params * 20
 
   // 数据质量
@@ -100,12 +108,13 @@ const CONFIG = {
   },
 
   // 技术研发树（按依赖关系分层，覆盖训练全流程）
-  // 研发等级：完成指定数量的技术后自动晋级，限制更高阶技术的立项。
+  // 研发等级：必须把当前层级所有技术全部解锁，才能进入下一级。
   RESEARCH_LEVELS: {
-    1: { name: '探索级', requiredCompleted: 0, desc: '可研发基础技术' },
-    2: { name: '工程级', requiredCompleted: 3, desc: '可研发进阶技术' },
-    3: { name: '架构级', requiredCompleted: 8, desc: '可研发高级技术' },
-    4: { name: '前沿级', requiredCompleted: 15, desc: '可研发前沿技术' }
+    1: { name: '探索级', desc: '可研发基础技术' },
+    2: { name: '工程级', desc: '可研发进阶技术（需解锁全部基础技术）' },
+    3: { name: '架构级', desc: '可研发高级技术（需解锁全部进阶技术）' },
+    4: { name: '前沿级', desc: '可研发前沿技术（需解锁全部高级技术）' },
+    5: { name: '突破级', desc: '可研发突破性技术（需解锁全部前沿技术）' }
   },
   TECH_UPGRADE_MAX_LEVEL: 3,
   TECH_UPGRADE_COST_MULTIPLIER: 1.75,
@@ -153,14 +162,20 @@ const CONFIG = {
     preference_optimization: { name: '偏好优化管线', desc: '自动清洗偏好对、难例挖掘并迭代对齐策略，提高可靠性', tier: 4, deps: ['grpo', 'constitutional'], days: 85, cost: 48_000_000, effect: '安全与推理质量+3%', qualityMod: 0.03 },
     tool_use_training: { name: '工具调用训练', desc: '让模型学会规划、调用检索和代码工具，再根据结果修正答案', tier: 4, deps: ['grpo', 'synthetic_curriculum'], days: 90, cost: 52_000_000, effect: '编程与推理质量+4%', qualityMod: 0.03 },
     smooth_quantization: { name: '平滑量化部署', desc: '在尽量保持精度的前提下压缩权重与激活值，降低推理成本', tier: 4, deps: ['qat', 'continuous_batching'], days: 65, cost: 30_000_000, effect: '推理收入+25%', incomeBonus: 0.25 },
-    privacy_preserving_data: { name: '隐私保护数据管线', desc: '在训练前做脱敏、去标识化与风险审计，获得更多可信企业数据', tier: 4, deps: ['data_dedup', 'constitutional'], days: 75, cost: 40_000_000, effect: '数据质量+3%，安全性提升', qualityMod: 0.03 }
+    privacy_preserving_data: { name: '隐私保护数据管线', desc: '在训练前做脱敏、去标识化与风险审计，获得更多可信企业数据', tier: 4, deps: ['data_dedup', 'constitutional'], days: 75, cost: 40_000_000, effect: '数据质量+3%，安全性提升', qualityMod: 0.03 },
+    // Tier 5 - 突破性技术
+    liquid_cooling: { name: '液冷超算集群', desc: '全浸没式液冷系统，支持超高密度GPU部署，功耗与散热极限提升', tier: 5, deps: ['fp8_training', 'expert_parallel'], days: 120, cost: 80_000_000, effect: '训练效率+15%', effBonus: 0.15 },
+    neuromorphic: { name: '神经形态计算', desc: '基于脉冲神经网络的新型计算架构，能效比远超传统GPU', tier: 5, deps: ['kernel_fusion', 'retrieval_pretraining'], days: 150, cost: 120_000_000, effect: '训练效率+35%，质量+2%', effBonus: 0.35, qualityMod: 0.02 },
+    quantum_ml: { name: '量子机器学习', desc: '利用量子计算加速特定矩阵运算，突破经典计算瓶颈', tier: 5, deps: ['moe', 'tool_use_training'], days: 180, cost: 200_000_000, effect: '训练效率+40%，推理质量+3%', effBonus: 0.40, qualityMod: 0.03 },
+    agi_alignment: { name: 'AGI 对齐协议', desc: '可验证的安全对齐框架，确保超大规模模型始终可控', tier: 5, deps: ['preference_optimization', 'constitutional'], days: 160, cost: 150_000_000, effect: '安全性+20%，质量+5%', qualityMod: 0.05 },
+    self_improving: { name: '自改进训练', desc: '模型在训练过程中自主发现并修复自身弱点，持续提升质量', tier: 5, deps: ['synthetic_curriculum', 'grpo'], days: 200, cost: 250_000_000, effect: '质量+5%，所有基准+3%', qualityMod: 0.05 }
   },
 
   // 研究员
   RESEARCHER_TIERS: {
     junior:   { name: '初级研究员', salary: 3_000_000, effBonus: 0.02, desc: '刚毕业的AI研究员，基础研究能力', unlockValuation: 0 },
-    senior:   { name: '高级研究员', salary: 8_000_000, effBonus: 0.04, desc: '有经验的算法工程师，产出稳定', unlockValuation: 500_000_000 },
-    principal:{ name: '首席研究员', salary: 15_000_000, effBonus: 0.06, desc: '顶尖AI科学家，可能带来算法突破', unlockValuation: 2_000_000_000 }
+    senior:   { name: '高级研究员', salary: 8_000_000, effBonus: 0.04, desc: '有经验的算法工程师，产出稳定', unlockValuation: 1_000_000_000 },
+    principal:{ name: '首席研究员', salary: 15_000_000, effBonus: 0.06, desc: '顶尖AI科学家，可能带来算法突破', unlockValuation: 5_000_000_000 }
   },
   RESEARCHER_MAX_PER_TIER: 5,
   RESEARCHER_HIRE_COOLDOWN: 30, // 每次聘请后冷却30天

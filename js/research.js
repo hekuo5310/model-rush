@@ -1,4 +1,6 @@
 // Model Rush - 技术研发系统
+// 作者：mukunjin
+// 仓库：https://github.com/mukunjin/model-rush
 const Research = {
   // state: { unlocked: [], techLevels: { key: level }, researching: { key: { daysElapsed, totalDays, cost, targetLevel } }, queue: [] }
   state: { unlocked: [], techLevels: {}, researching: {}, queue: [] },
@@ -34,19 +36,41 @@ const Research = {
   },
 
   getLevelInfo() {
-    const completed = this.state.unlocked.length;
-    let level = 1;
-    for (const [key, info] of Object.entries(CONFIG.RESEARCH_LEVELS)) {
-      if (completed >= info.requiredCompleted) level = Number(key);
+    // 统计各层级已解锁技术
+    const tierTechs = { 1: [], 2: [], 3: [], 4: [], 5: [] };
+    for (const [key, tech] of Object.entries(CONFIG.TECH_RESEARCH)) {
+      const tier = tech.tier || 1;
+      if (tierTechs[tier]) tierTechs[tier].push(key);
     }
+
+    // 当前层级：检查下一层级的全部技术是否已解锁
+    let level = 1;
+    for (let t = 1; t <= 4; t++) {
+      const allUnlocked = tierTechs[t].every(key => this.isUnlocked(key));
+      if (!allUnlocked) break;
+      level = t + 1;
+    }
+
     const current = CONFIG.RESEARCH_LEVELS[level];
     const next = CONFIG.RESEARCH_LEVELS[level + 1] || null;
+    const completed = this.state.unlocked.length;
+
+    // 下一层的完成进度
+    let progress = 100;
+    if (next) {
+      const nextTier = level;
+      const nextTierTechs = tierTechs[nextTier] || [];
+      const nextUnlocked = nextTierTechs.filter(k => this.isUnlocked(k)).length;
+      progress = nextTierTechs.length > 0 ? Math.min(100, nextUnlocked / nextTierTechs.length * 100) : 100;
+    }
+
     return {
       level,
       name: current.name,
       completed,
+      totalCurrentTier: (tierTechs[level] || []).length,
       next,
-      progress: next ? Math.min(100, completed / next.requiredCompleted * 100) : 100
+      progress
     };
   },
 
@@ -57,11 +81,16 @@ const Research = {
     if (!tech) return { ok: false, reason: '未知技术' };
     const currentLevel = this.getTechLevel(techKey);
     if (currentLevel >= this.getMaxTechLevel(techKey)) return { ok: false, reason: '已升至最高等级', blockType: 'maxed' };
-    const levelInfo = this.getLevelInfo();
-    const requiredLevel = tech.tier || 1;
-    if (levelInfo.level < requiredLevel) {
-      const required = CONFIG.RESEARCH_LEVELS[requiredLevel];
-      return { ok: false, reason: '研发等级不足：需要 Lv.' + requiredLevel + '（累计完成 ' + required.requiredCompleted + ' 项技术）', blockType: 'level' };
+    const techTier = tech.tier || 1;
+    // 检查是否需要先解锁上一层的全部技术
+    if (techTier > 1) {
+      const prevTier = techTier - 1;
+      const prevTierTechs = Object.entries(CONFIG.TECH_RESEARCH).filter(([, t]) => (t.tier || 1) === prevTier).map(([k]) => k);
+      const allPrevUnlocked = prevTierTechs.every(k => this.isUnlocked(k));
+      if (!allPrevUnlocked) {
+        const missing = prevTierTechs.filter(k => !this.isUnlocked(k)).map(k => CONFIG.TECH_RESEARCH[k]?.name || k).join(', ');
+        return { ok: false, reason: '需先解锁全部 ' + CONFIG.RESEARCH_LEVELS[prevTier].name + ' 技术（缺: ' + missing + '）', blockType: 'level' };
+      }
     }
     // 检查前置依赖
     for (const dep of tech.deps) {
@@ -70,7 +99,7 @@ const Research = {
         return { ok: false, reason: '需要先解锁: ' + depName, blockType: 'deps' };
       }
     }
-    // 检查队列是否已满（最多同时研发2项 + 研究员加成）
+    // 检查队列是否已满
     const maxConcurrent = 2 + Math.floor(Economy.getTotalResearchers() / 3);
     const currentCount = Object.keys(this.state.researching).length;
     if (currentCount >= maxConcurrent) {
@@ -90,11 +119,16 @@ const Research = {
       return { type: 'deps', text: '需前置: ' + names };
     }
     if (this.getTechLevel(techKey) >= this.getMaxTechLevel(techKey)) return { type: 'maxed', text: '已达最高等级' };
-    const levelInfo = this.getLevelInfo();
-    const requiredLevel = tech.tier || 1;
-    if (levelInfo.level < requiredLevel) {
-      const required = CONFIG.RESEARCH_LEVELS[requiredLevel];
-      return { type: 'level', text: '需研发 Lv.' + requiredLevel + '（完成 ' + required.requiredCompleted + ' 项）' };
+    // 检查是否需要先解锁上一层全部技术
+    const techTier = tech.tier || 1;
+    if (techTier > 1) {
+      const prevTier = techTier - 1;
+      const prevTierTechs = Object.entries(CONFIG.TECH_RESEARCH).filter(([, t]) => (t.tier || 1) === prevTier).map(([k]) => k);
+      const allPrevUnlocked = prevTierTechs.every(k => this.isUnlocked(k));
+      if (!allPrevUnlocked) {
+        const unlockedCount = prevTierTechs.filter(k => this.isUnlocked(k)).length;
+        return { type: 'level', text: '需解锁全部 ' + CONFIG.RESEARCH_LEVELS[prevTier].name + ' (' + unlockedCount + '/' + prevTierTechs.length + ')' };
+      }
     }
     // 检查队列
     const maxConcurrent = 2 + Math.floor(Economy.getTotalResearchers() / 3);

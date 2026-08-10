@@ -1,11 +1,13 @@
 // Model Rush - 游戏状态管理与时间循环
+// 作者：mukunjin
+// 仓库：https://github.com/mukunjin/model-rush
 const Game = {
   state: {
     companyName: '', // 公司名称
     cash: CONFIG.INITIAL_CASH,
     valuation: CONFIG.INITIAL_CASH,
     day: 1,
-    speed: 1, // 0=pause, 1=1x, 2=2x
+    speed: 1, // 0=pause, 1=1x, 2=2x, 4=4x
     running: false,
     elapsed: 0, // 当前游戏天内累计真实秒数
     lastFrame: 0,

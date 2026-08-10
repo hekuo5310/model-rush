@@ -1,4 +1,6 @@
 // Model Rush - Three.js 场景初始化
+// 作者：mukunjin
+// 仓库：https://github.com/mukunjin/model-rush
 const Scene = {
   scene: null,
   camera: null,
