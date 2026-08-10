@@ -1,6 +1,8 @@
 // Model Rush - UI 更新与交互
 const UI = {
   TUTORIAL_KEY: 'model_rush_tutorial_completed',
+  activeModalType: null,
+  modalDrafts: {},
   tutorialStep: 0,
   tutorialPreviousSpeed: null,
   tutorialSteps: [
@@ -187,6 +189,12 @@ const UI = {
 
   closeDropdown() {
     document.querySelectorAll('.dropdown-group.open').forEach(g => g.classList.remove('open'));
+  },
+
+  escapeHtml(value) {
+    const node = document.createElement('div');
+    node.textContent = value == null ? '' : String(value);
+    return node.innerHTML;
   },
 
   update() {
@@ -546,7 +554,43 @@ const UI = {
   },
 
   showModal(type) {
+    UI.activeModalType = type;
+    UI.renderModal(type);
+    document.getElementById('modal-overlay').classList.remove('hidden');
+  },
+
+  // 完成事件后刷新已打开的相关功能窗，玩家无需关闭后重开。
+  refreshActiveModal(types) {
     const overlay = document.getElementById('modal-overlay');
+    const type = UI.activeModalType;
+    if (!type || !overlay || overlay.classList.contains('hidden')) return;
+    if (types && !types.includes(type)) return;
+    UI.captureModalDraft(type);
+    UI.renderModal(type);
+  },
+
+  captureModalDraft(type) {
+    if (type === 'collect-data') {
+      const tokens = document.getElementById('data-tokens');
+      UI.modalDrafts[type] = { tokens: tokens ? tokens.value : '10' };
+      return;
+    }
+    if (type !== 'new-training') return;
+    const name = document.getElementById('train-name');
+    const slider = document.getElementById('train-params-slider');
+    const gpuAllocation = {};
+    document.querySelectorAll('.gpu-alloc-input').forEach(input => { gpuAllocation[input.dataset.gpu] = input.value; });
+    UI.modalDrafts[type] = {
+      name: name ? name.value : '',
+      paramsB: slider ? slider.value : '70',
+      gpuAllocation,
+      alignment: (document.querySelector('.align-option.border-accent') || {}).dataset?.align || 'dpo',
+      openSource: (document.querySelector('.open-option.border-accent') || {}).dataset?.open === 'true',
+      techs: Array.from(document.querySelectorAll('.tech-card.selected')).map(el => el.dataset.tech)
+    };
+  },
+
+  renderModal(type) {
     const content = document.getElementById('modal-content');
 
     let html = '';
@@ -564,8 +608,6 @@ const UI = {
     }
 
     content.innerHTML = html;
-    overlay.classList.remove('hidden');
-
     // 绑定事件
     if (type === 'buy-gpu') UI.bindBuyGPUEvents();
     else if (type === 'demolish-gpu') UI.bindDemolishGPUEvents();
@@ -581,6 +623,8 @@ const UI = {
 
   hideModal() {
     document.getElementById('modal-overlay').classList.add('hidden');
+    UI.activeModalType = null;
+    UI.modalDrafts = {};
   },
 
   showDeleteConfirm() {
@@ -1184,7 +1228,7 @@ const UI = {
     // 采集数量
     html += '<div class="flex items-center gap-2 mb-2">' +
       '<span class="text-xs text-muted">采集数量:</span>' +
-      '<input id="data-tokens" type="number" class="modal-input w-24" value="10" min="1" max="100">' +
+      '<input id="data-tokens" type="number" class="modal-input w-24" value="' + (UI.modalDrafts['collect-data']?.tokens || '10') + '" min="1" max="100">' +
       '<span class="text-xs text-muted">B tokens</span>' +
       '</div>';
     html += '<div class="text-xs text-muted mb-3">预计花费: <span id="data-cost" class="text-accent">$0</span></div>';
@@ -1245,26 +1289,27 @@ const UI = {
       if (tokensB <= 0) return;
       DataCollection.startCollection(UI._selectedDataSource, tokensB);
       // 刷新模态框（保留选中的数据源）
-      document.getElementById('modal-content').innerHTML = UI.buildCollectDataModal();
-      UI.bindCollectDataEvents();
+      UI.refreshActiveModal(['collect-data']);
     });
   },
 
   // === 新建训练模态框 ===
   buildTrainingModal() {
     const s = Game.state;
+    const draft = UI.modalDrafts['new-training'] || {};
+    const paramsB = Math.max(CONFIG.PARAMS_MIN_B, Math.min(CONFIG.PARAMS_MAX_B, parseInt(draft.paramsB) || 70));
     let html = '<h2 class="text-lg font-bold text-accent mb-3">新建训练任务</h2>';
     html += '<div class="text-xs text-muted mb-2">支持并行训练；可用 GPU 已自动扣除其它训练与已部署模型的占用。</div>';
 
     // 模型名称
     html += '<div class="mb-3"><label class="text-xs text-muted">模型名称</label>' +
-      '<input id="train-name" type="text" class="modal-input" value="Model-' + s.day + '" maxlength="20"></div>';
+      '<input id="train-name" type="text" class="modal-input" value="' + UI.escapeHtml(draft.name || ('Model-' + s.day)) + '" maxlength="20"></div>';
 
     // 模型参数（自由滑动条）
     html += '<div class="mb-3"><label class="text-xs text-muted">模型参数规模</label>' +
       '<div class="mt-2 mb-1 flex items-center gap-3">' +
-      '<input id="train-params-slider" type="range" min="' + CONFIG.PARAMS_MIN_B + '" max="' + CONFIG.PARAMS_MAX_B + '" step="1" value="70" class="scale-slider flex-1">' +
-      '<span id="train-params-label" class="text-xs font-bold text-accent whitespace-nowrap">70B</span>' +
+      '<input id="train-params-slider" type="range" min="' + CONFIG.PARAMS_MIN_B + '" max="' + CONFIG.PARAMS_MAX_B + '" step="1" value="' + paramsB + '" class="scale-slider flex-1">' +
+      '<span id="train-params-label" class="text-xs font-bold text-accent whitespace-nowrap">' + paramsB + 'B</span>' +
       '</div>' +
       '<div class="relative h-4 text-[10px] text-muted mt-1">' +
       '<span class="absolute left-0">1B</span>' +
@@ -1290,8 +1335,10 @@ const UI = {
       const inferenceUsed = inferenceAlloc[key] || 0;
       const trainingUsed = trainingAlloc[key] || 0;
       const avail = Math.max(0, owned - inferenceUsed - trainingUsed);
-      const recType = recommendedInferenceGPUsForType(70e9, key);
+      const recType = recommendedInferenceGPUsForType(paramsB * 1e9, key);
       const defaultVal = Math.min(recType, avail);
+      const savedValue = draft.gpuAllocation && draft.gpuAllocation[key];
+      const value = savedValue === undefined ? defaultVal : Math.max(0, Math.min(avail, parseInt(savedValue) || 0));
       const colorHex = '#' + gpu.color.toString(16).padStart(6, '0');
       html += '<div class="flex items-center gap-2 p-1 border border-border rounded text-xs' + (owned === 0 ? ' opacity-40' : '') + '">' +
         '<span class="inline-block w-2 h-2 rounded-full" style="background:' + colorHex + '"></span>' +
@@ -1299,7 +1346,7 @@ const UI = {
         '<span class="text-muted flex-1">' + gpu.tflops + ' TFLOPS | ' + (gpu.power / 1000) + 'kW</span>' +
         '<span class="text-muted">可用 ' + avail + '/' + owned + (trainingUsed > 0 ? '（训练占用' + trainingUsed + '）' : '') + '</span>' +
         '<span class="text-accent" id="rec-' + key + '" title="最少训练数">最少' + recType + '</span>' +
-        '<input type="number" class="modal-input w-16 gpu-alloc-input" data-gpu="' + key + '" data-max="' + avail + '" data-auto="' + defaultVal + '" value="' + defaultVal + '" min="0" max="' + avail + '"' + (owned === 0 ? ' disabled' : '') + '>' +
+        '<input type="number" class="modal-input w-16 gpu-alloc-input" data-gpu="' + key + '" data-max="' + avail + '" data-auto="' + defaultVal + '" value="' + value + '" min="0" max="' + avail + '"' + (owned === 0 ? ' disabled' : '') + '>' +
         '</div>';
     }
     html += '</div>';
@@ -1319,7 +1366,7 @@ const UI = {
       '<div class="grid grid-cols-2 gap-1 mt-1" id="tech-grid">';
     for (const [key, tech] of Object.entries(CONFIG.TECH_RESEARCH)) {
       const unlocked = Research.isUnlocked(key);
-      const classes = unlocked ? 'tech-card' : 'tech-card opacity-40';
+      const classes = unlocked ? 'tech-card' + ((draft.techs || []).includes(key) ? ' selected' : '') : 'tech-card opacity-40';
       const statusText = unlocked ? '' : ' <span class="text-muted">(需研发)</span>';
       html += '<div class="' + classes + '" data-tech="' + key + '">' +
         '<div class="text-xs font-bold">' + tech.name + statusText + '</div>' +
@@ -1344,10 +1391,11 @@ const UI = {
   },
 
   bindTrainingEvents() {
-    let selectedParams = 70e9; // 默认 70B
-    let selectedAlign = 'dpo';
-    let selectedOpen = false;
-    let selectedTechs = [];
+    const draft = UI.modalDrafts['new-training'] || {};
+    let selectedParams = (parseInt(draft.paramsB) || 70) * 1e9;
+    let selectedAlign = draft.alignment || 'dpo';
+    let selectedOpen = !!draft.openSource;
+    let selectedTechs = draft.techs || [];
 
     // 自由参数滑动条
     const slider = document.getElementById('train-params-slider');
@@ -1394,7 +1442,7 @@ const UI = {
         const recEl = document.getElementById('rec-' + key);
         if (recEl) recEl.textContent = '最少' + rec;
         const autoVal = parseInt(inp.dataset.auto) || 0;
-        if ((parseInt(inp.value) || 0) === autoVal) {
+        if (!draft.gpuAllocation && (parseInt(inp.value) || 0) === autoVal) {
           const max = parseInt(inp.dataset.max) || 0;
           const newVal = Math.min(rec, max);
           inp.value = newVal;
@@ -1413,7 +1461,7 @@ const UI = {
         selectedAlign = el.dataset.align;
       });
     });
-    document.querySelector('.align-option[data-align="dpo"]').classList.add('border-accent', 'bg-accent/5');
+    document.querySelector('.align-option[data-align="' + selectedAlign + '"]').classList.add('border-accent', 'bg-accent/5');
 
     document.querySelectorAll('.open-option').forEach(el => {
       el.addEventListener('click', () => {
@@ -1422,7 +1470,7 @@ const UI = {
         selectedOpen = el.dataset.open === 'true';
       });
     });
-    document.querySelector('.open-option[data-open="false"]').classList.add('border-accent', 'bg-accent/5');
+    document.querySelector('.open-option[data-open="' + selectedOpen + '"]').classList.add('border-accent', 'bg-accent/5');
 
     document.querySelectorAll('.tech-card:not(.opacity-40)').forEach(el => {
       el.addEventListener('click', () => {
