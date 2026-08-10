@@ -35,6 +35,7 @@ const UI = {
     if (!force && localStorage.getItem(UI.getTutorialStorageKey()) === '1') return;
     if (UI.tutorialPreviousSpeed === null) {
       UI.tutorialPreviousSpeed = Game.state.speed;
+      Game.state.tutorialPaused = true;
       Game.setSpeed(0);
     }
     UI.tutorialStep = 0;
@@ -80,6 +81,7 @@ const UI = {
     if (overlay) overlay.remove();
     const previousSpeed = UI.tutorialPreviousSpeed;
     UI.tutorialPreviousSpeed = null;
+    Game.state.tutorialPaused = false;
     if (previousSpeed !== null && Game.state.speed === 0) Game.setSpeed(previousSpeed);
   },
 
@@ -277,6 +279,14 @@ const UI = {
     const researching = Research.getResearchingList();
     if (researching.length > 0) {
       html += '<div><span class="text-muted">研发中:</span> ' + researching.map(r => r.name).join(', ') + '</div>';
+    }
+
+    // 实时数据采集简报：随每日结算刷新，显示已到账与进行中任务。
+    const dataStats = DataCollection.getStats();
+    const dataJobs = DataCollection.getActiveJobs();
+    if (dataStats.totalTokens > 0 || dataJobs.length > 0) {
+      html += '<div><span class="text-muted">数据:</span> <span class="font-mono text-accent">' + dataStats.totalTokens.toFixed(1) + 'B</span>' +
+        (dataJobs.length > 0 ? ' <span class="text-amber">采集中 ' + dataJobs.length + ' 项</span>' : '') + '</div>';
     }
 
     // 警告
@@ -608,7 +618,6 @@ const UI = {
       UI.toast('已创建新存档，后续保存将写入该存档');
       document.getElementById('modal-content').innerHTML = UI.buildSaveManagerModal();
       UI.bindSaveManagerEvents();
-      setTimeout(() => UI.startTutorial(), 100);
     });
     document.querySelectorAll('.save-switch').forEach(button => button.addEventListener('click', () => {
       localStorage.setItem(SaveSystem.LAST_SLOT_KEY, button.dataset.slot);
@@ -1114,6 +1123,7 @@ const UI = {
 
   buildCollectDataModal() {
     const stats = DataCollection.getStats();
+    const activeJobs = DataCollection.getActiveJobs();
     const effectiveQuality = DataCollection.getEffectiveQuality();
     // 统一质量颜色阈值：>=0.85 绿, >=0.75 琥珀, >=0.60 浅琥珀, <0.60 红
     const qualityLabel = effectiveQuality >= 0.85 ? '极高' : effectiveQuality >= 0.75 ? '良好' : effectiveQuality >= 0.60 ? '一般' : '低';
@@ -1129,6 +1139,9 @@ const UI = {
     html += '<div><span class="text-muted">已采总量</span><div class="font-mono text-accent text-base">' + stats.totalTokens + 'B tokens</div></div>';
     html += '<div><span class="text-muted">平均质量</span><div class="font-mono text-base" style="color:' + qualityColor + '">' + qualityLabel + ' (' + (effectiveQuality * 100).toFixed(0) + '%)</div></div>';
     html += '</div>';
+    if (activeJobs.length > 0) {
+      html += '<div class="text-xs text-amber mb-3">正在实时采集：' + activeJobs.map(job => job.name + ' ' + job.collectedTokensB.toFixed(1) + '/' + job.totalTokensB + 'B（剩余 ' + Math.max(0, job.daysTotal - job.daysElapsed) + ' 天）').join('；') + '</div>';
+    }
     // 质量进度条
     html += '<div class="progress-bar mt-2"><div class="progress-fill" style="width:' + (effectiveQuality * 100) + '%;background:' + qualityColor + '"></div></div>';
     html += '</div>';
@@ -1178,7 +1191,7 @@ const UI = {
 
     html += '<div class="flex gap-2 justify-end">' +
       '<button onclick="UI.hideModal()" class="modal-btn">关闭</button>' +
-      '<button id="confirm-collect" class="modal-btn primary">确认采集</button>' +
+      '<button id="confirm-collect" class="modal-btn primary">开始实时采集</button>' +
       '</div>';
 
     return html;
@@ -1230,7 +1243,7 @@ const UI = {
     document.getElementById('confirm-collect').addEventListener('click', () => {
       const tokensB = parseInt(document.getElementById('data-tokens').value) || 0;
       if (tokensB <= 0) return;
-      DataCollection.buySource(UI._selectedDataSource, tokensB);
+      DataCollection.startCollection(UI._selectedDataSource, tokensB);
       // 刷新模态框（保留选中的数据源）
       document.getElementById('modal-content').innerHTML = UI.buildCollectDataModal();
       UI.bindCollectDataEvents();
