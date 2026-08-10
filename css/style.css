@@ -100,10 +100,10 @@
   inset: 0;
   z-index: 120;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  background: rgba(0, 0, 0, 0.7);
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding: 20px 20px 92px;
+  pointer-events: none;
 }
 .tutorial-card {
   width: min(440px, 100%);
@@ -112,6 +112,7 @@
   border-radius: 10px;
   background: #14141f;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  pointer-events: auto;
 }
 .tutorial-card h2 { margin: 4px 0 10px; color: #00ff88; font-size: 18px; }
 .tutorial-card p { margin: 0; color: #ccc; font-size: 14px; line-height: 1.7; }
@@ -435,7 +436,7 @@ body.h-screen { height: 100dvh; }
   }
   #modal-content .modal-btn { min-height: 40px; }
   #modal-content .modal-input { font-size: 14px; }
-  #tutorial-overlay { align-items: flex-end; padding: 12px; }
+  #tutorial-overlay { align-items: flex-end; padding: 12px 12px calc(92px + env(safe-area-inset-bottom)); }
   .tutorial-card { padding: 18px; }
   .tutorial-card p { font-size: 13px; }
   .tutorial-actions .modal-btn { min-height: 42px; padding: 8px 12px; }
