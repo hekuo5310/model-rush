@@ -19,7 +19,8 @@ const Game = {
     coolingCapacityMW: CONFIG.INITIAL_COOLING_CAPACITY_MW,
 
     // 训练
-    activeTraining: null, // 当前训练任务
+    activeTraining: null, // 兼容旧界面：当前首个训练任务
+    activeTrainings: [], // 并行训练任务
     deployedModels: [], // 已部署模型 [{name, score, rank, openSource, scale, ...}]
     completedModels: [], // 已完成的模型列表
 
@@ -54,6 +55,7 @@ const Game = {
   },
 
   autoSaveTimer: 0, // 自动存档计时器（真实秒）
+  MAX_FRAME_DELTA_SECONDS: 0.25, // 防止浏览器切回前台后一次性快进大量游戏天数
 
   init() {
     // 初始化 GPU 库存
@@ -70,7 +72,9 @@ const Game = {
     if (!this.state.running) return;
     requestAnimationFrame((t) => this.loop(t));
 
-    const dt = (timestamp - this.state.lastFrame) / 1000; // 真实秒
+    const rawDt = (timestamp - this.state.lastFrame) / 1000;
+    // 页面在后台时 requestAnimationFrame 会被节流；恢复后只结算有限时长，避免跳日、连锁事件和卡顿。
+    const dt = Math.max(0, Math.min(rawDt, this.MAX_FRAME_DELTA_SECONDS));
     this.state.lastFrame = timestamp;
 
     // 自动存档（每100真实秒）
@@ -113,7 +117,7 @@ const Game = {
     Economy.settleDaily();
 
     // 训练进度
-    if (this.state.activeTraining) {
+    if (this.state.activeTrainings.length > 0) {
       Training.advanceTrainingDay();
     }
 
@@ -207,15 +211,47 @@ const Game = {
     return Object.values(alloc).reduce((a, b) => a + b, 0);
   },
 
+  getActiveTrainings() {
+    if (!Array.isArray(this.state.activeTrainings)) this.state.activeTrainings = this.state.activeTraining ? [this.state.activeTraining] : [];
+    return this.state.activeTrainings;
+  },
+
+  syncPrimaryTraining() {
+    this.state.activeTraining = this.getActiveTrainings()[0] || null;
+  },
+
+  // 默认只统计运行中的训练；暂停任务会释放 GPU，可被推理或其他训练重新分配。
+  getTrainingGPUAllocation(includePaused = false) {
+    const allocation = {};
+    for (const training of this.getActiveTrainings()) {
+      if (!includePaused && training.paused) continue;
+      for (const [type, count] of Object.entries(training.gpuAllocation || {})) {
+        if (CONFIG.GPUS[type]) allocation[type] = (allocation[type] || 0) + count;
+      }
+    }
+    return allocation;
+  },
+
+  getModelMinimumInferenceH100(model) {
+    return recommendedInferenceGPUs(model.params || 0);
+  },
+
+  // 混合型号按 H100 等效算力汇率校验；部署不能低于模型最低推理需求。
+  meetsModelInferenceMinimum(model, allocation) {
+    return effectiveInferenceGPUs(allocation) >= this.getModelMinimumInferenceH100(model);
+  },
+
   // 可用于训练的GPU数（总数 - 推理占用）
   getAvailableGPUs() {
-    return Math.max(0, this.state.gpuTotal - this.getInferenceGPUs());
+    const training = Object.values(this.getTrainingGPUAllocation()).reduce((a, b) => a + b, 0);
+    const owned = Object.values(this.state.gpuInventory).reduce((sum, count) => sum + (Number(count) || 0), 0);
+    return Math.max(0, owned - this.getInferenceGPUs() - training);
   },
 
   // GPU 实际功耗（训练中GPU满载，推理GPU中载，闲置GPU低功耗）
   getGPUActualPowerMW() {
     let total = 0;
-    const trainingAlloc = this.state.activeTraining ? (this.state.activeTraining.gpuAllocation || {}) : {};
+    const trainingAlloc = this.getTrainingGPUAllocation(false);
     const inferenceAlloc = this.getInferenceGPUAllocation();
     // 兼容旧存档的 _legacy 分配
     const legacyTraining = trainingAlloc._legacy || 0;
@@ -224,7 +260,9 @@ const Game = {
     let legacyInfRemaining = legacyInference;
 
     for (const [key, count] of Object.entries(this.state.gpuInventory)) {
-      const ratedMW = CONFIG.GPUS[key].power / 1_000_000;
+      const gpu = CONFIG.GPUS[key];
+      if (!gpu) continue; // 防御旧存档或被篡改存档中的未知 GPU 键
+      const ratedMW = gpu.power / 1_000_000;
       let trainingCount = Math.min(count, trainingAlloc[key] || 0);
       // 旧存档回退：按顺序分配训练GPU
       if (legacyTrainRemaining > 0 && trainingCount < count) {

@@ -4,10 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Model Rush</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/three@0.148.0/build/three.min.js"></script>
-  <link rel="stylesheet" href="css/style.css?v=13">
-  <script>
+  <script data-cfasync="false" src="https://cdn.tailwindcss.com"></script>
+  <script data-cfasync="false" src="https://unpkg.com/three@0.148.0/build/three.min.js"></script>
+  <link rel="stylesheet" href="css/style.css?v=15">
+  <script data-cfasync="false">
     tailwind.config = {
       theme: {
         extend: {
@@ -32,8 +32,8 @@
       <div class="text-accent text-2xl font-bold tracking-wider mb-2">Model Rush</div>
       <div class="text-muted text-sm mb-6">AI 大模型训练模拟器</div>
       <div id="continue-section" class="mb-4 hidden">
-        <button id="continue-game-btn" class="modal-btn primary w-full py-2 mb-2">继续游戏</button>
-        <div class="text-xs text-muted" id="save-info"></div>
+        <div class="text-xs text-muted mb-2">选择要继续的存档</div>
+        <div id="save-slots-list" class="space-y-1 mb-2"></div>
         <div class="text-xs text-muted mt-2">或输入新公司名开始新游戏:</div>
       </div>
       <div class="text-left mb-4">
@@ -64,7 +64,7 @@
     <!-- 3D 场景 -->
     <div id="scene-container" class="flex-1 relative bg-[#0a0a0f]">
       <div id="scene-tooltip" class="absolute top-2 left-2 text-xs text-muted bg-panel/80 px-2 py-1 rounded pointer-events-none hidden"></div>
-      <button id="panel-toggle-btn" onclick="UI.toggleMobilePanel()">☰</button>
+      <button id="panel-toggle-btn" onclick="UI.toggleMobilePanel()" aria-label="打开信息面板" aria-expanded="false">☰</button>
     </div>
 
     <!-- 拖拽调整手柄 -->
@@ -95,6 +95,8 @@
             <div class="grid grid-cols-2 gap-1">
               <span class="text-muted">日收入</span><span id="panel-income" class="text-accent font-mono text-right">+$0</span>
               <span class="text-muted">日支出</span><span id="panel-expense" class="text-danger font-mono text-right">-$0</span>
+              <span class="text-muted">电费（含冷却）</span><span id="panel-electricity-expense" class="font-mono text-right">-$0</span>
+              <span class="text-muted">网费</span><span id="panel-network-expense" class="font-mono text-right">-$0</span>
               <span class="text-muted">日利润</span><span id="panel-profit" class="font-mono text-right">$0</span>
               <span class="text-muted">现金</span><span id="panel-cash" class="text-accent font-mono text-right">$500.00M</span>
             </div>
@@ -203,6 +205,7 @@
     <button onclick="Economy.fundraise()" class="action-btn" id="btn-fundraise">发起融资</button>
     <span class="text-muted mx-1">|</span>
     <button onclick="SaveSystem.save(false)" class="action-btn">保存游戏</button>
+    <button onclick="UI.showModal('save-manager')" class="action-btn">存档管理</button>
     <button onclick="UI.showDeleteConfirm()" class="action-btn text-danger hover:border-danger">删除存档</button>
   </div>
 
@@ -214,18 +217,19 @@
   <!-- Toast -->
   <div id="toast" class="hidden fixed top-16 right-4 bg-panel border border-accent rounded px-4 py-2 text-sm z-50 shadow-lg"></div>
 
-  <script src="js/config.js?v=13"></script>
-  <script src="js/game.js?v=13"></script>
-  <script src="js/economy.js?v=12"></script>
-  <script src="js/training.js?v=12"></script>
-  <script src="js/benchmark.js?v=12"></script>
-  <script src="js/research.js?v=13"></script>
-  <script src="js/data.js?v=12"></script>
-  <script src="js/events.js?v=12"></script>
-  <script src="js/save.js?v=12"></script>
-  <script src="js/scene.js?v=13"></script>
-  <script src="js/datacenter.js?v=12"></script>
-  <script src="js/ui.js?v=13"></script>
-  <script src="js/main.js?v=12"></script>
+  <!-- 禁用 Cloudflare Rocket Loader 对游戏脚本的延迟改写，保证启动事件按顺序绑定。 -->
+  <script data-cfasync="false" src="js/config.js?v=17"></script>
+  <script data-cfasync="false" src="js/game.js?v=16"></script>
+  <script data-cfasync="false" src="js/economy.js?v=19"></script>
+  <script data-cfasync="false" src="js/training.js?v=18"></script>
+  <script data-cfasync="false" src="js/benchmark.js?v=15"></script>
+  <script data-cfasync="false" src="js/research.js?v=15"></script>
+  <script data-cfasync="false" src="js/data.js?v=15"></script>
+  <script data-cfasync="false" src="js/events.js?v=14"></script>
+  <script data-cfasync="false" src="js/save.js?v=17"></script>
+  <script data-cfasync="false" src="js/scene.js?v=16"></script>
+  <script data-cfasync="false" src="js/datacenter.js?v=14"></script>
+  <script data-cfasync="false" src="js/ui.js?v=20"></script>
+  <script data-cfasync="false" src="js/main.js?v=15"></script>
 </body>
 </html>

@@ -14,6 +14,11 @@ const Scene = {
   raycaster: new THREE.Raycaster(),
   mouse: new THREE.Vector2(),
   hoveredObject: null,
+  lastHoverCheck: 0,
+  lastRenderTime: 0,
+  maxRenderFPS: 45,
+  isMobile: false,
+  webglAvailable: true,
 
   init() {
     this.container = document.getElementById('scene-container');
@@ -28,18 +33,35 @@ const Scene = {
     this.camera = new THREE.PerspectiveCamera(45, w / h, 0.5, 200);
     this.updateCameraPosition();
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setSize(w, h);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.renderer.domElement.style.touchAction = 'none'; // 移动端手势由JS处理
-    this.container.appendChild(this.renderer.domElement);
+    this.isMobile = window.matchMedia && window.matchMedia('(max-width: 768px), (pointer: coarse)').matches;
+    // 场景以大量机架为主：适度限制像素比和关闭抗锯齿，优先保持操作流畅。
+    // WebGL 被禁用或驱动不可用时，仍允许进入游戏并保留所有经营玩法。
+    try {
+      this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+      this.renderer.setSize(w, h);
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.isMobile ? 1 : 1.5));
+      this.renderer.shadowMap.enabled = !this.isMobile;
+      this.renderer.shadowMap.type = THREE.PCFShadowMap;
+      this.maxRenderFPS = this.isMobile ? 30 : 45;
+      this.renderer.domElement.style.touchAction = 'none'; // 移动端手势由JS处理
+      this.container.appendChild(this.renderer.domElement);
+      this.webglAvailable = true;
+    } catch (e) {
+      this.renderer = null;
+      this.webglAvailable = false;
+      console.warn('WebGL 不可用，已切换为机房简化模式', e);
+      const fallback = document.createElement('div');
+      fallback.className = 'absolute inset-0 flex items-center justify-center text-center text-muted text-sm p-6';
+      fallback.innerHTML = '<div><div class="text-accent mb-2">机房简化模式</div><div>当前浏览器无法启用 3D 渲染，经营与训练功能不受影响。</div></div>';
+      this.container.appendChild(fallback);
+    }
 
     this.setupLights();
     this.setupGrid();
-    this.setupControls();
-    this.setupClickInteraction();
+    if (this.renderer) {
+      this.setupControls();
+      this.setupClickInteraction();
+    }
 
     window.addEventListener('resize', () => this.onResize());
   },
@@ -57,7 +79,7 @@ const Scene = {
       this.raycaster.setFromCamera(this.mouse, this.camera);
 
       // 检查GPU方块
-      const gpuMeshes = Datacenter.gpuBlocks.flatMap(b => b.blades);
+      const gpuMeshes = Datacenter.getPickableGPUMeshes();
       const intersects = this.raycaster.intersectObjects(gpuMeshes, false);
 
       if (intersects.length > 0) {
@@ -93,13 +115,16 @@ const Scene = {
     // 悬停效果
     canvas.addEventListener('mousemove', (e) => {
       if (this.isDragging) return;
+      const now = performance.now();
+      if (now - this.lastHoverCheck < 80) return; // 限制高频鼠标移动触发的射线检测
+      this.lastHoverCheck = now;
       const rect = canvas.getBoundingClientRect();
       this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
       this.raycaster.setFromCamera(this.mouse, this.camera);
 
-      const gpuMeshes = Datacenter.gpuBlocks.flatMap(b => b.blades);
+      const gpuMeshes = Datacenter.getPickableGPUMeshes();
       const intersects = this.raycaster.intersectObjects(gpuMeshes, false);
 
       if (intersects.length > 0) {
@@ -258,8 +283,8 @@ const Scene = {
     const sun = new THREE.DirectionalLight(0xffffff, 0.8);
     sun.position.set(20, 30, 10);
     sun.castShadow = true;
-    sun.shadow.mapSize.width = 2048;
-    sun.shadow.mapSize.height = 2048;
+    sun.shadow.mapSize.width = 1024;
+    sun.shadow.mapSize.height = 1024;
     sun.shadow.camera.near = 0.5;
     sun.shadow.camera.far = 100;
     sun.shadow.camera.left = -25;
@@ -292,6 +317,9 @@ const Scene = {
 
   render() {
     if (this.renderer && this.scene && this.camera) {
+      const now = performance.now();
+      if (now - this.lastRenderTime < 1000 / this.maxRenderFPS) return;
+      this.lastRenderTime = now;
       this.renderer.render(this.scene, this.camera);
     }
   },
@@ -300,6 +328,7 @@ const Scene = {
     if (!this.container || !this.camera || !this.renderer) return;
     const w = this.container.clientWidth;
     const h = this.container.clientHeight;
+    if (w <= 0 || h <= 0) return;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
