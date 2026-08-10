@@ -2,14 +2,15 @@
 const UI = {
   TUTORIAL_KEY: 'model_rush_tutorial_completed',
   tutorialStep: 0,
+  tutorialPreviousSpeed: null,
   tutorialSteps: [
-    { title: '欢迎来到 Model Rush', tab: 'finance', text: '你将经营一家 AI 公司。游戏中 1 个真实秒约等于 1 个游戏天；资金不足时可以暂停时间，慢慢规划。' },
-    { title: '第一步：采集数据', tab: 'finance', text: '先点击底栏的“采集数据”。至少收集 10B tokens，才能开始训练；不同来源会影响模型擅长的能力。' },
-    { title: '第二步：配置算力', tab: 'inventory', text: '在“GPU 管理”中购买 GPU。库存页会清楚显示训练、推理与闲置 GPU，购买前记得预留机架位、供电和冷却。' },
-    { title: '第三步：研发技术', tab: 'research', text: '从“团队 → 研发技术”开始研发。每项技术都可继续升级，能提高训练效率、模型质量或收入。' },
-    { title: '第四步：并行训练', tab: 'training', text: '点击“新建训练”分配 GPU。可以同时训练多个模型；暂停任务会释放 GPU，供其他训练或部署使用。' },
+    { title: '欢迎来到 Model Rush', tab: 'finance', text: '引导期间游戏已经暂停。你可以一边阅读，一边直接操作页面；完成当前动作后再点“下一步”。' },
+    { title: '第一步：采集数据', tab: 'finance', text: '现在点击底栏“采集数据”。至少收集 10B tokens，才能开始训练；不同来源会影响模型擅长的能力。' },
+    { title: '第二步：配置算力', tab: 'inventory', text: '现在从“GPU 管理”购买 GPU。库存页会显示训练、推理与闲置 GPU；购买前请预留机架位、供电和冷却。' },
+    { title: '第三步：研发技术', tab: 'research', text: '现在从“团队 → 研发技术”选择一项开始研发。每项技术都可继续升级，提高训练效率、模型质量或收入。' },
+    { title: '第四步：并行训练', tab: 'training', text: '现在点击“新建训练”分配 GPU。可以同时训练多个模型；暂停任务会释放 GPU，供其他训练或部署使用。' },
     { title: '第五步：手动部署赚钱', tab: 'products', text: '训练完成后会出现在“待部署模型”。选择满足最低等效 H100 算力的 GPU 才能部署；开源模型也能赚钱，但通常低于闭源模型。' },
-    { title: '开始经营', tab: 'finance', text: '留意每日电费（含冷却）、网费和人员支出。定期保存进度；需要回顾时，底栏的“新手引导”可以随时重新打开。' }
+    { title: '开始经营', tab: 'finance', text: '留意电费（含冷却）、网费和人员支出。结束引导后会恢复原本速度；需要回顾时，可随时点击底栏“新手引导”。' }
   ],
 
   init() {
@@ -25,8 +26,17 @@ const UI = {
     if (tab) tab.click();
   },
 
+  getTutorialStorageKey() {
+    const slotId = (typeof SaveSystem !== 'undefined' && SaveSystem.currentSlotId) || 'default';
+    return UI.TUTORIAL_KEY + '_' + slotId;
+  },
+
   startTutorial(force = false) {
-    if (!force && localStorage.getItem(UI.TUTORIAL_KEY) === '1') return;
+    if (!force && localStorage.getItem(UI.getTutorialStorageKey()) === '1') return;
+    if (UI.tutorialPreviousSpeed === null) {
+      UI.tutorialPreviousSpeed = Game.state.speed;
+      Game.setSpeed(0);
+    }
     UI.tutorialStep = 0;
     UI.renderTutorialStep();
   },
@@ -50,7 +60,7 @@ const UI = {
       '<div class="tutorial-actions">' +
       '<button class="modal-btn" onclick="UI.closeTutorial(true)">跳过</button>' +
       (UI.tutorialStep > 0 ? '<button class="modal-btn" onclick="UI.previousTutorialStep()">上一步</button>' : '') +
-      '<button class="modal-btn primary" onclick="UI.nextTutorialStep()">' + (isLast ? '开始经营' : '下一步') + '</button>' +
+      '<button class="modal-btn primary" onclick="UI.nextTutorialStep()">' + (isLast ? '结束引导' : '我完成了，下一步') + '</button>' +
       '</div></div>';
   },
 
@@ -65,9 +75,12 @@ const UI = {
   },
 
   closeTutorial(completed = true) {
-    if (completed) localStorage.setItem(UI.TUTORIAL_KEY, '1');
+    if (completed) localStorage.setItem(UI.getTutorialStorageKey(), '1');
     const overlay = document.getElementById('tutorial-overlay');
     if (overlay) overlay.remove();
+    const previousSpeed = UI.tutorialPreviousSpeed;
+    UI.tutorialPreviousSpeed = null;
+    if (previousSpeed !== null && Game.state.speed === 0) Game.setSpeed(previousSpeed);
   },
 
   // 移动端面板切换
@@ -595,6 +608,7 @@ const UI = {
       UI.toast('已创建新存档，后续保存将写入该存档');
       document.getElementById('modal-content').innerHTML = UI.buildSaveManagerModal();
       UI.bindSaveManagerEvents();
+      setTimeout(() => UI.startTutorial(), 100);
     });
     document.querySelectorAll('.save-switch').forEach(button => button.addEventListener('click', () => {
       localStorage.setItem(SaveSystem.LAST_SLOT_KEY, button.dataset.slot);
