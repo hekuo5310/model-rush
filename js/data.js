@@ -1,18 +1,18 @@
 // Model Rush - 数据采集与处理系统
-// 作者：mukunjin
-// 仓库：https://github.com/mukunjin/model-rush
 const DataCollection = {
-  // state: { sources: { web_crawl: 0, books: 0, ... }, collected: false, totalTokens: 0, avgQuality: 0 }
-  state: { sources: {}, collected: false, totalTokens: 0, avgQuality: 0 },
+  // state: { sources, collected, activeJobs: [{ sourceKey, totalTokensB, collectedTokensB, daysTotal, daysElapsed }] }
+  state: { sources: {}, collected: false, totalTokens: 0, avgQuality: 0, activeJobs: [] },
+  TOKENS_PER_DAY_B: 5,
 
   init() {
     for (const key of Object.keys(CONFIG.DATA_SOURCES)) {
       this.state.sources[key] = 0;
     }
+    if (!Array.isArray(this.state.activeJobs)) this.state.activeJobs = [];
   },
 
-  // 购买数据源（tokens数量，单位：亿）
-  buySource(sourceKey, tokensB) {
+  // 启动实时采集任务（tokens 数量，单位：B）；费用预付，数据按游戏天持续到账。
+  startCollection(sourceKey, tokensB) {
     const src = CONFIG.DATA_SOURCES[sourceKey];
     if (!src) return false;
     const cost = src.cost * (tokensB / 10); // 每10B tokens = 基础价格
@@ -22,10 +22,41 @@ const DataCollection = {
       return false;
     }
     s.cash -= cost;
-    this.state.sources[sourceKey] = (this.state.sources[sourceKey] || 0) + tokensB;
-    Game.addLog('采集数据: ' + src.name + ' +' + tokensB + 'B tokens ($' + Economy.formatMoney(cost) + ')');
+    const daysTotal = Math.max(1, Math.ceil(tokensB / this.TOKENS_PER_DAY_B));
+    this.state.activeJobs.push({
+      id: 'data_' + Game.state.day + '_' + Date.now(),
+      sourceKey,
+      name: src.name,
+      totalTokensB: tokensB,
+      collectedTokensB: 0,
+      daysTotal,
+      daysElapsed: 0
+    });
+    Game.addLog('开始实时采集: ' + src.name + ' ' + tokensB + 'B tokens（预计 ' + daysTotal + ' 天，预付 $' + Economy.formatMoney(cost) + '）');
     UI.update();
     return true;
+  },
+
+  // 兼容旧调用名称。
+  buySource(sourceKey, tokensB) { return this.startCollection(sourceKey, tokensB); },
+
+  getActiveJobs() { return Array.isArray(this.state.activeJobs) ? this.state.activeJobs : []; },
+
+  advanceDay() {
+    const completed = [];
+    for (const job of this.getActiveJobs()) {
+      const remaining = Math.max(0, job.totalTokensB - job.collectedTokensB);
+      const dailyTokens = job.totalTokensB / Math.max(1, job.daysTotal);
+      const gained = Math.min(remaining, dailyTokens);
+      this.state.sources[job.sourceKey] = (this.state.sources[job.sourceKey] || 0) + gained;
+      job.collectedTokensB += gained;
+      job.daysElapsed++;
+      if (job.collectedTokensB >= job.totalTokensB - 1e-6) completed.push(job);
+    }
+    if (completed.length > 0) {
+      this.state.activeJobs = this.getActiveJobs().filter(job => !completed.includes(job));
+      for (const job of completed) Game.addLog('数据采集完成: ' + job.name + ' +' + job.totalTokensB + 'B tokens');
+    }
   },
 
   // 计算数据总tokens和平均质量
@@ -79,6 +110,7 @@ const DataCollection = {
     this.state.collected = false;
     this.state.totalTokens = 0;
     this.state.avgQuality = 0;
+    this.state.activeJobs = [];
   },
 
   // 获取数据类别分布（用于影响benchmark）
