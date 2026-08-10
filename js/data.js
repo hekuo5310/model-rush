@@ -57,6 +57,8 @@ const DataCollection = {
       this.state.activeJobs = this.getActiveJobs().filter(job => !completed.includes(job));
       for (const job of completed) Game.addLog('数据采集完成: ' + job.name + ' +' + job.totalTokensB + 'B tokens');
     }
+    // 采集量按天到帐时，正在打开的数据窗口也同步显示最新进度。
+    if (this.getActiveJobs().length > 0 || completed.length > 0) UI.refreshActiveModal(['collect-data', 'new-training']);
   },
 
   // 计算数据总tokens和平均质量
