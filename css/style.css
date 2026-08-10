@@ -291,6 +291,7 @@ body.h-screen { height: 100dvh; }
   position: relative;
   z-index: 40;
 }
+/* beta-only:project-footer-style:start */
 #project-footer {
   flex: 0 0 auto;
   min-height: 24px;
@@ -306,6 +307,7 @@ body.h-screen { height: 100dvh; }
 }
 #project-footer a { color: #7f8c8d; text-decoration: none; }
 #project-footer a:hover { color: #00ff88; }
+/* beta-only:project-footer-style:end */
 
 /* === 移动端适配 === */
 @media (max-width: 768px) {
@@ -390,10 +392,12 @@ body.h-screen { height: 100dvh; }
     max-width: 90vw;
     margin-bottom: 0;
   }
+  /* beta-only:project-footer-mobile-style:start */
   #project-footer {
     min-height: 26px;
     padding-bottom: calc(4px + env(safe-area-inset-bottom));
   }
+  /* beta-only:project-footer-mobile-style:end */
 
   /* 模态框：全宽 */
   #modal-content {
