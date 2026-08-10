@@ -1,14 +1,13 @@
 // Model Rush - 游戏状态管理与时间循环
-// 作者：mukunjin
-// 仓库：https://github.com/mukunjin/model-rush
 const Game = {
   state: {
     companyName: '', // 公司名称
     cash: CONFIG.INITIAL_CASH,
     valuation: CONFIG.INITIAL_CASH,
     day: 1,
-    speed: 1, // 0=pause, 1=1x, 2=2x, 4=4x
+    speed: 1, // 0=pause, 1=1x, 2=2x
     running: false,
+    tutorialPaused: false, // 新手引导期间强制暂停，避免误触速度控制后继续结算
     elapsed: 0, // 当前游戏天内累计真实秒数
     lastFrame: 0,
 
@@ -86,7 +85,7 @@ const Game = {
       SaveSystem.save(true);
     }
 
-    if (this.state.speed === 0) {
+    if (this.state.speed === 0 || this.state.tutorialPaused) {
       Scene.render();
       return;
     }
@@ -117,6 +116,9 @@ const Game = {
   advanceDay() {
     // 经济结算
     Economy.settleDaily();
+
+    // 数据采集按游戏天持续产出，可与研发、训练并行进行。
+    DataCollection.advanceDay();
 
     // 训练进度
     if (this.state.activeTrainings.length > 0) {
@@ -167,6 +169,7 @@ const Game = {
   },
 
   setSpeed(speed) {
+    if (this.state.tutorialPaused && speed !== 0) return;
     this.state.speed = speed;
     document.querySelectorAll('.speed-btn').forEach(b => {
       b.classList.remove('bg-accent/10', 'text-accent', 'border-accent');
