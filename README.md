@@ -1,6 +1,8 @@
 # Model Rush
 
+<!-- beta-only:readme-notice:start -->
 **这是测试版仓库，功能变更可能过快，建议前往[正式版仓库](https://github.com/mukunjin/model-rush)**
+<!-- beta-only:readme-notice:end -->
 
 AI 大模型训练模拟经营游戏。扮演一家 AI 公司，从零开始：采集数据、购买 GPU、研发技术、训练模型、挑战基准测试最高分。
 
