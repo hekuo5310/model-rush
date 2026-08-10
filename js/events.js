@@ -1,6 +1,4 @@
 // Model Rush - 随机事件系统
-// 作者：mukunjin
-// 仓库：https://github.com/mukunjin/model-rush
 const Events = {
   trigger() {
     const event = CONFIG.EVENTS[Math.floor(Math.random() * CONFIG.EVENTS.length)];
@@ -123,5 +121,6 @@ const Events = {
     }
 
     UI.update();
+    UI.refreshActiveModal(['new-training', 'research', 'collect-data']);
   }
 };
