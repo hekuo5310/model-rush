@@ -1,9 +1,0 @@
-{
-  "slug": "model-rush",
-  "name": "Model Rush · 论坛版",
-  "entry": "src/main.js",
-  "scopes": ["kv"],
-  "surface": "blocks",
-  "placement": "single",
-  "triggers": []
-}
