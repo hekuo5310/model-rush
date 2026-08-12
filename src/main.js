@@ -87,6 +87,8 @@ export async function onAction(ctx, api) {
   else if (action === 'fundraise') fundraise(game);
   else if (action.startsWith('start_research:')) startResearch(game, action.slice('start_research:'.length));
   else if (action.startsWith('toggle_tech:')) toggleSelectedTech(game, action.slice('toggle_tech:'.length));
+  else if (action === 'add_train_gpu') addTrainingGpu(game, ctx.inputs || {});
+  else if (action === 'clear_train_gpu') { game.trainDraft = {}; game.message = '训练 GPU 分配草稿已清空'; }
   else if (action === 'start_training') startTraining(game, ctx.inputs || {});
   else if (action.startsWith('toggle_training:')) toggleTraining(game, action.slice('toggle_training:'.length));
   else if (action.startsWith('abandon_training:')) abandonTraining(game, action.slice('abandon_training:'.length));
@@ -112,7 +114,7 @@ function createGame(message = '欢迎来到 Model Rush') {
   return {
     day: 1, cash: 500, valuation: 500, data: 0, gpus: 0, gpuInventory: { A100: 0, H100: 0, B200: 0 },
     powerCapacity: 5, coolingCapacity: 4, datacenterSlots: 64, researchers: { junior: 0, senior: 0, principal: 0 }, lastHireDay: -30,
-    research: null, techLevels: {}, selectedTechs: [], dataSources: {}, dataJobs: [], trainings: [], completed: [], deployed: [], effects: [], blackoutDays: 0, buyBanDays: 0,
+    research: null, techLevels: {}, selectedTechs: [], trainDraft: {}, dataSources: {}, dataJobs: [], trainings: [], completed: [], deployed: [], effects: [], blackoutDays: 0, buyBanDays: 0,
     lastFundraiseDay: -180, nextEventDay: 30, eventLog: [], message, serial: 1,
   };
 }
@@ -142,6 +144,7 @@ function normalize(value) {
   game.researchers = game.researchers || { junior: 0, senior: 0, principal: 0 };
   game.techLevels = game.techLevels || {};
   game.selectedTechs = Array.isArray(game.selectedTechs) ? game.selectedTechs : [];
+  game.trainDraft = game.trainDraft && typeof game.trainDraft === 'object' ? game.trainDraft : {};
   game.dataSources = game.dataSources && typeof game.dataSources === 'object' ? game.dataSources : {};
   game.effects = Array.isArray(game.effects) ? game.effects : [];
   game.blackoutDays = Math.max(0, Number(game.blackoutDays) || 0);
@@ -299,11 +302,13 @@ function startTraining(game, input) {
   const paramsB = clamp(Number(input.params_b) || 70, 1, 2000);
   const gpuType = GPUS[input.train_gpu_type] ? input.train_gpu_type : 'H100';
   const gpus = clamp(Math.floor(Number(input.train_gpu_count) || 0), 1, game.gpuInventory[gpuType] || 0);
-  const allocation = { [gpuType]: gpus };
-  const freeByType = freeGpuByType(game, gpuType);
+  const allocation = { ...game.trainDraft };
+  if (Number(input.train_gpu_count) > 0) allocation[gpuType] = gpus;
+  const allocationCount = sumAllocation(allocation);
   const neededData = Math.max(10, Math.ceil(paramsB / 5));
   if (game.data < neededData) return fail(game, '训练 ' + paramsB + 'B 至少需要 ' + neededData + 'B 数据');
-  if (gpus < 1 || gpus > freeByType) return fail(game, gpuType + ' 闲置数量不足');
+  for (const [key, count] of Object.entries(allocation)) if (count < 1 || count > freeGpuByType(game, key)) return fail(game, key + ' 闲置数量不足');
+  if (!allocationCount) return fail(game, '至少分配 1 张 GPU');
   const selectedTechs = game.selectedTechs.filter(key => game.techLevels[key] > 0);
   const alignment = input.alignment === 'rlhf' ? 'rlhf' : 'dpo';
   const alignmentCost = alignment === 'rlhf' ? 50 : 10;
@@ -311,12 +316,21 @@ function startTraining(game, input) {
   if (game.cash < alignmentCost + techCost) return fail(game, '现金不足，训练配置费用 $' + (alignmentCost + techCost) + 'M');
   game.cash -= alignmentCost + techCost;
   game.data -= neededData;
-  const compute = gpus * GPUS[gpuType].score;
+  const compute = Object.entries(allocation).reduce((sum, [key, count]) => sum + count * GPUS[key].score, 0);
   const totalDays = Math.max(1, Math.ceil((paramsB * paramsB / 3500) / Math.max(1, compute * trainingEfficiency(game, selectedTechs))));
   const id = 'model-' + game.serial++;
   const modelName = cleanName(input.model_name) || ('Model-' + game.day + '-' + game.serial);
-  game.trainings.push({ id, name: modelName, params: paramsB + 'B', paramsB, alignment, openSource: input.open_source === 'true', techs: selectedTechs, gpuAllocation: allocation, gpus, daysLeft: totalDays, totalDays, elapsed: 0, checkpoints: [], paused: false });
-  game.message = '已创建 ' + paramsB + 'B 训练任务，占用 ' + gpus + ' 张 ' + gpuType + ' GPU，预计 ' + totalDays + ' 天';
+  game.trainings.push({ id, name: modelName, params: paramsB + 'B', paramsB, alignment, openSource: input.open_source === 'true', techs: selectedTechs, gpuAllocation: allocation, gpus: allocationCount, daysLeft: totalDays, totalDays, elapsed: 0, checkpoints: [], paused: false });
+  game.trainDraft = {};
+  game.message = '已创建 ' + paramsB + 'B 训练任务，占用 ' + allocationText(allocation) + '，预计 ' + totalDays + ' 天';
+}
+
+function addTrainingGpu(game, input) {
+  const type = GPUS[input.train_gpu_type] ? input.train_gpu_type : 'H100';
+  const count = Math.max(0, Math.floor(Number(input.train_gpu_count) || 0));
+  if (!count || count > freeGpuByType(game, type)) return fail(game, type + ' 闲置数量不足');
+  game.trainDraft[type] = count;
+  game.message = type + '×' + count + ' 已加入训练 GPU 分配草稿';
 }
 
 function toggleTraining(game, id) {
@@ -505,11 +519,13 @@ function view(game, account) {
   children.push({ type: 'input', name: 'model_name', placeholder: '模型名称（默认自动命名）', value: '' });
   children.push({ type: 'input', name: 'params_b', placeholder: '参数规模 1–2000（B）', value: '70' });
   children.push({ type: 'select', name: 'train_gpu_type', value: 'H100', options: Object.keys(GPUS).map(key => ({ value: key, label: key + ' / 闲置 ' + freeGpuByType(game, key) + ' / 等效 ' + GPUS[key].score })) });
-  children.push({ type: 'input', name: 'train_gpu_count', placeholder: '训练 GPU 数量', value: '8' });
+  children.push({ type: 'input', name: 'train_gpu_count', placeholder: '训练 GPU 数量（可逐型号加入草稿）', value: '' });
   children.push({ type: 'select', name: 'alignment', value: 'dpo', options: [{ value: 'dpo', label: 'DPO / $10M / 稳定' }, { value: 'rlhf', label: 'RLHF + PPO / $50M / 质量更高' }] });
   children.push({ type: 'select', name: 'open_source', value: 'false', options: [{ value: 'false', label: '闭源 / API 收入' }, { value: 'true', label: '开源 / 生态收入较低' }] });
   const unlockedTechs = TECHS.filter(tech => game.techLevels[tech.key] > 0);
   children.push({ type: 'text', value: '训练技术：' + (game.selectedTechs.length ? game.selectedTechs.map(key => TECHS.find(tech => tech.key === key)?.name).join('、') : '未选择') });
+  children.push({ type: 'text', value: 'GPU 分配草稿：' + allocationText(game.trainDraft) });
+  children.push({ type: 'hstack', gap: 'small', children: [button('[ ADD / UPDATE GPU TYPE ]', 'add_train_gpu'), button('[ CLEAR GPU DRAFT ]', 'clear_train_gpu')] });
   for (const tech of unlockedTechs) children.push(button((game.selectedTechs.includes(tech.key) ? '[ ✓ ] ' : '[   ] ') + tech.name + ' Lv.' + game.techLevels[tech.key], 'toggle_tech:' + tech.key, 'flat'));
   children.push(button('[ START TRAINING ]', 'start_training', 'primary'));
   panel(children, 'ACTIVE JOBS', []);
