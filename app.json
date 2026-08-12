@@ -1,6 +1,6 @@
 {
-  "slug": "model-rush",
-  "name": "Model Rush · 论坛版",
+  "slug": "model-rush-beta",
+  "name": "Model Rush Beta",
   "entry": "src/main.js",
   "scopes": ["kv"],
   "surface": "blocks",
