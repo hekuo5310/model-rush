@@ -12,14 +12,23 @@ const TRAINING_TIERS = [
   { key: 'frontier', name: '前沿模型', params: '400B', data: 100, minGpus: 32, maxGpus: 32, days: 11, baseScore: 75 },
 ];
 const GPUS = {
-  A100: { price: 48, power: 0.40, score: 1.0 },
-  H100: { price: 80, power: 0.70, score: 1.8 },
-  B200: { price: 130, power: 1.00, score: 2.8 },
+  A100: { price: 48, power: 0.40, score: 1.0, unlock: 0 },
+  H100: { price: 80, power: 0.70, score: 1.8, unlock: 200 },
+  H200: { price: 120, power: 0.70, score: 2.5, unlock: 500 },
+  B200: { price: 150, power: 1.00, score: 2.8, unlock: 1000 },
+  B300: { price: 190, power: 1.40, score: 3.1, unlock: 2000 },
+  GB300: { price: 240, power: 1.80, score: 4.0, unlock: 5000 },
+  MI300X: { price: 60, power: 0.75, score: 1.55, unlock: 300 },
+  MI325X: { price: 84, power: 0.75, score: 2.05, unlock: 800 },
+  Rubin: { price: 270, power: 1.80, score: 6.3, unlock: 10000 },
 };
 const DATA_SOURCES = {
-  web: { name: '通用网页', cost: 12, tokens: 10, days: 2, quality: 0.60 },
-  books: { name: '图书语料', cost: 24, tokens: 10, days: 3, quality: 0.78 },
-  code: { name: '开源代码', cost: 32, tokens: 10, days: 3, quality: 0.86 },
+  web_crawl: { name: '网页爬取', cost: 12, tokens: 10, days: 2, quality: 0.55, category: '通用' },
+  books: { name: '书籍语料', cost: 30, tokens: 10, days: 3, quality: 0.85, category: '知识' },
+  code_repos: { name: '代码仓库', cost: 40, tokens: 10, days: 3, quality: 0.80, category: '编程' },
+  academic: { name: '学术论文', cost: 50, tokens: 10, days: 4, quality: 0.90, category: '推理' },
+  synthetic: { name: '合成数据', cost: 60, tokens: 10, days: 3, quality: 0.75, category: '通用' },
+  multilingual: { name: '多语言语料', cost: 20, tokens: 10, days: 2, quality: 0.65, category: '多语言' },
 };
 
 export async function render(ctx, api) {
@@ -69,7 +78,7 @@ function normalize(value) {
   game.data = Math.max(0, Number(game.data) || 0);
   game.gpus = Math.max(0, Number(game.gpus) || 0);
   game.valuation = Math.max(0, Number(game.valuation) || game.cash);
-  game.gpuInventory = game.gpuInventory || { A100: 0, H100: 0, B200: 0 };
+  game.gpuInventory = game.gpuInventory || {};
   for (const key of Object.keys(GPUS)) game.gpuInventory[key] = Math.max(0, Number(game.gpuInventory[key]) || 0);
   game.gpus = Object.values(game.gpuInventory).reduce((sum, count) => sum + count, 0);
   game.powerCapacity = Math.max(1, Number(game.powerCapacity) || 5);
@@ -136,7 +145,7 @@ function advanceDay(game) {
 }
 
 function startCollection(game, sourceKey) {
-  const source = DATA_SOURCES[sourceKey] || DATA_SOURCES.web;
+  const source = DATA_SOURCES[sourceKey] || DATA_SOURCES.web_crawl;
   const cost = source.cost;
   if (game.cash < cost) return fail(game, '现金不足，无法采集数据');
   game.cash -= cost;
@@ -147,13 +156,15 @@ function startCollection(game, sourceKey) {
 
 function buyGpu(game, type) {
   const gpu = GPUS[type] || GPUS.H100;
+  const key = GPUS[type] ? type : 'H100';
   const cost = gpu.price * 8;
+  if (game.valuation < gpu.unlock) return fail(game, key + ' 需要市值 $' + gpu.unlock + 'M 才能解锁');
   if (game.gpus + 8 > game.datacenterSlots) return fail(game, '机房机架位不足，请先扩容机房');
   if (game.cash < cost) return fail(game, '现金不足，购买 8 张 ' + (type || 'H100') + ' 需要 $' + cost + 'M');
   game.cash -= cost;
-  game.gpuInventory[type || 'H100'] += 8;
+  game.gpuInventory[key] += 8;
   game.gpus += 8;
-  game.message = '已购买 8 张 ' + (type || 'H100') + '，闲置 GPU 可立即投入训练';
+  game.message = '已购买 8 张 ' + key + '，闲置 GPU 可立即投入训练';
 }
 
 function expandInfrastructure(game, type) {
@@ -268,7 +279,7 @@ function view(game) {
   ]);
 
   panel(children, 'RESOURCE CONTROL', ['选择后点击对应操作按钮。']);
-  children.push({ type: 'select', name: 'data_source', value: 'web', options: Object.entries(DATA_SOURCES).map(([key, item]) => ({ value: key, label: item.name + ' / $' + item.cost + 'M / ' + item.tokens + 'B / ' + item.days + 'D' })) });
+  children.push({ type: 'select', name: 'data_source', value: 'web_crawl', options: Object.entries(DATA_SOURCES).map(([key, item]) => ({ value: key, label: item.name + '（' + item.category + '）/ $' + item.cost + 'M / ' + item.tokens + 'B / ' + item.days + 'D' })) });
   children.push({ type: 'select', name: 'gpu_type', value: 'H100', options: Object.entries(GPUS).map(([key, item]) => ({ value: key, label: key + ' / $' + (item.price * 8) + 'M per 8 / ' + item.score + 'x' })) });
   children.push({ type: 'hstack', gap: 'small', children: [
     button('[ EXPAND POWER +5MW ]', 'expand_power'), button('[ EXPAND COOLING +4MW ]', 'expand_cooling'), button('[ EXPAND DC +32 ]', 'expand_datacenter'),
