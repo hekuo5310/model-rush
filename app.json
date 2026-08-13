@@ -3,7 +3,7 @@
   "name": "Model Rush Beta",
   "entry": "src/main.js",
   "scopes": ["kv"],
-  "surface": "blocks",
+  "surface": "webview",
   "placement": "single",
   "triggers": []
 }
